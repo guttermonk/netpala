@@ -55,6 +55,11 @@ help = "Auto"
 keys = ["h"]
 help = "Hidden"
 
+# Actions - Open the DNS provider switcher for a known network
+[keybindings.set_dns]
+keys = ["d"]
+help = "DNS"
+
 # Application - Quit the application
 [keybindings.quit]
 keys = ["q", "ctrl+c", "ctrl+q", "ctrl+w"]
@@ -64,6 +69,16 @@ help = "Quit"
 [keybindings.cancel]
 keys = ["esc"]
 help = "Cancel"
+
+# DNS Switcher Configuration
+#
+# Where a local DNSCrypt proxy (dnscrypt-proxy, stubby, etc) listens.
+# It MUST be on port 53 — /etc/resolv.conf has no syntax for a port, so a
+# proxy on 127.0.0.1:5353 cannot be used here.
+# netpala does not run the proxy; it only points the connection profile at it.
+
+[dns]
+dnscrypt_addresses = ["127.0.0.1"]
 
 # Color Configuration
 # 

@@ -159,6 +159,7 @@ func GetKnownNetworks(conn *dbus.Conn) []common.KnownNetwork {
 
 			Path: c, SSID: common.SanitizeSSID(ss, "[?]"), Security: sec, Connected: apInfo.Connected, Hidden: hidden,
 			AutoConnect: auto, Signal: apInfo.Signal, BSSID: apInfo.BSSID,
+			DNSMode: DNSModeFromSettings(s), DNSServers: DNSServersFromSettings(s),
 		})
 	}
 	sort.SliceStable(known, func(i, j int) bool {

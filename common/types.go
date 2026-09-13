@@ -44,6 +44,16 @@ type SubmitConfirmationMsg struct {
 type SubmitPasswordMsg struct {
 	Value string
 }
+// DnsProbeMsg carries the result of a background resolver liveness check.
+type DnsProbeMsg struct {
+	Addrs []string
+	Err   error
+}
+type SubmitDnsMsg struct {
+	ProviderID string
+	// Custom holds the raw address list when ProviderID is "custom".
+	Custom string
+}
 
 type Device struct {
 	Path         dbus.ObjectPath
@@ -67,6 +77,8 @@ type KnownNetwork struct {
 	AutoConnect bool
 	Signal      int
 	Connected   bool
+	DNSMode     string
+	DNSServers  []string
 }
 
 type ScannedNetwork struct {

@@ -149,6 +149,58 @@ windowrule = float 1, match:title com.omarchy.netpala
 
 - Space / Enter : Connect / Disconnect
 - Delete / Backspace : Remove network
+- a : Toggle auto-connect
+- h : Toggle hidden
+- d : Switch DNS provider
+
+---
+
+### DNS Provider Switcher
+
+Pressing `d` on a known network opens a picker with four choices:
+
+| Option | Servers |
+| --- | --- |
+| DHCP | none saved — uses whatever the router hands out |
+| Cloudflare | `1.1.1.1`, `1.0.0.1` (+ IPv6) |
+| Google | `8.8.8.8`, `8.8.4.4` (+ IPv6) |
+| DNSCrypt | a local encrypted-DNS proxy, `127.0.0.1` by default |
+| Custom | whatever you type, comma or space separated |
+
+The setting is stored on the NetworkManager connection profile, so it is
+per-network: your home Wi-Fi can keep the router's DNS while a coffee-shop
+network is pinned to Cloudflare. Picking anything other than DHCP also sets
+`ignore-auto-dns`, so the DHCP-supplied servers are not appended.
+
+The current provider is shown in the DNS column of the Known Networks table.
+If the connection being edited is the active one, netpala re-activates it so
+the change applies immediately instead of at the next reconnect.
+
+Picking anything other than DHCP also suppresses the router's IPv6 resolvers,
+so a v4-only choice can't leak queries around your chosen provider.
+
+#### DNSCrypt
+
+**netpala does not run a DNSCrypt proxy and cannot speak the protocol.**
+DNSCrypt is implemented by a separate daemon such as
+[`dnscrypt-proxy`](https://github.com/DNSCrypt/dnscrypt-proxy), which listens on
+loopback and encrypts queries upstream. This option just points the connection
+profile at that daemon, so you need it installed and running first.
+
+The proxy must listen on **port 53** — `/etc/resolv.conf` has no syntax for a
+port, so a proxy on `127.0.0.1:5353` cannot be selected here. Configure the
+address in `~/.config/netpala/config.toml`:
+
+```toml
+[dns]
+dnscrypt_addresses = ["127.0.0.1"]
+```
+
+Because pointing at a proxy that isn't running takes out name resolution
+entirely, netpala probes the listener when you highlight the row and shows
+`(running)` or `(not responding)`. Applying a proxy that isn't answering takes
+a second Enter to confirm. Any all-loopback DNS setting reads back as DNSCrypt,
+so a non-default listener is still recognised.
 
 ---
 
@@ -207,6 +259,10 @@ help = "Auto"
 [keybindings.toggle_hidden]
 keys = ["h"]
 help = "Hidden"
+
+[keybindings.set_dns]
+keys = ["d"]
+help = "DNS"
 
 # Application
 [keybindings.quit]
@@ -273,6 +329,8 @@ Colors can be specified as:
   - Open Networks
 - Force network scan
 - Enable/Disable devices
+- Toggle auto-connect and hidden per known network
+- Per-network DNS provider switcher (DHCP / Cloudflare / Google / DNSCrypt / Custom)
 - Communicates with NetworkManager + wpa_supplicant over DBus
 
 ---
