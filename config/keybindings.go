@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"netpala/common"
 	"os"
 	"path/filepath"
 
@@ -29,6 +30,7 @@ type KeyBindings struct {
 	Scan              KeyBinding `toml:"scan"`
 	ToggleAutoConnect KeyBinding `toml:"toggle_autoconnect"`
 	ToggleHidden      KeyBinding `toml:"toggle_hidden"`
+	SetDns            KeyBinding `toml:"set_dns"`
 
 	// Application
 	Quit   KeyBinding `toml:"quit"`
@@ -48,10 +50,23 @@ type Colors struct {
 	HelpText      string `toml:"help_text"`      // Help text at bottom of window
 }
 
+// DNS holds settings for the DNS provider switcher
+type DNS struct {
+	// DnscryptAddresses is where a local DNSCrypt proxy listens. It must be on
+	// port 53, since resolv.conf has no way to express a port.
+	DnscryptAddresses []string `toml:"dnscrypt_addresses"`
+}
+
 // Config holds the entire application configuration
 type Config struct {
 	KeyBindings KeyBindings `toml:"keybindings"`
 	Colors      Colors      `toml:"colors"`
+	DNS         DNS         `toml:"dns"`
+}
+
+// DefaultDNS returns the default DNS switcher configuration
+func DefaultDNS() DNS {
+	return DNS{DnscryptAddresses: common.DefaultDNSCryptAddresses}
 }
 
 // DefaultKeyBindings returns the default keybinding configuration
@@ -93,6 +108,10 @@ func DefaultKeyBindings() KeyBindings {
 			Keys: []string{"h"},
 			Help: "Hidden",
 		},
+		SetDns: KeyBinding{
+			Keys: []string{"d"},
+			Help: "DNS",
+		},
 		Quit: KeyBinding{
 			Keys: []string{"q", "ctrl+c", "ctrl+q", "ctrl+w"},
 			Help: "Quit",
@@ -123,6 +142,7 @@ func DefaultConfig() Config {
 	return Config{
 		KeyBindings: DefaultKeyBindings(),
 		Colors:      DefaultColors(),
+		DNS:         DefaultDNS(),
 	}
 }
 
@@ -245,6 +265,9 @@ func mergeWithDefaults(cfg Config) Config {
 	if len(cfg.KeyBindings.ToggleHidden.Keys) == 0 {
 		cfg.KeyBindings.ToggleHidden = defaults.ToggleHidden
 	}
+	if len(cfg.KeyBindings.SetDns.Keys) == 0 {
+		cfg.KeyBindings.SetDns = defaults.SetDns
+	}
 	if len(cfg.KeyBindings.Quit.Keys) == 0 {
 		cfg.KeyBindings.Quit = defaults.Quit
 	}
@@ -280,6 +303,9 @@ func mergeWithDefaults(cfg Config) Config {
 	if cfg.KeyBindings.ToggleHidden.Help == "" {
 		cfg.KeyBindings.ToggleHidden.Help = defaults.ToggleHidden.Help
 	}
+	if cfg.KeyBindings.SetDns.Help == "" {
+		cfg.KeyBindings.SetDns.Help = defaults.SetDns.Help
+	}
 	if cfg.KeyBindings.Quit.Help == "" {
 		cfg.KeyBindings.Quit.Help = defaults.Quit.Help
 	}
@@ -308,6 +334,13 @@ func mergeWithDefaults(cfg Config) Config {
 	}
 	if cfg.Colors.ErrorText == "" {
 		cfg.Colors.ErrorText = defaultColors.ErrorText
+	}
+	if cfg.Colors.HelpText == "" {
+		cfg.Colors.HelpText = defaultColors.HelpText
+	}
+
+	if len(cfg.DNS.DnscryptAddresses) == 0 {
+		cfg.DNS = DefaultDNS()
 	}
 
 	return cfg
@@ -388,6 +421,7 @@ type AppKeyMap struct {
 	Scan              key.Binding
 	ToggleAutoConnect key.Binding
 	ToggleHidden      key.Binding
+	SetDns            key.Binding
 	Quit              key.Binding
 	Cancel            key.Binding
 }
@@ -404,6 +438,7 @@ func NewAppKeyMap(cfg *Config) AppKeyMap {
 		Scan:              cfg.KeyBindings.Scan.ToKeyBinding(),
 		ToggleAutoConnect: cfg.KeyBindings.ToggleAutoConnect.ToKeyBinding(),
 		ToggleHidden:      cfg.KeyBindings.ToggleHidden.ToKeyBinding(),
+		SetDns:            cfg.KeyBindings.SetDns.ToKeyBinding(),
 		Quit:              cfg.KeyBindings.Quit.ToKeyBinding(),
 		Cancel:            cfg.KeyBindings.Cancel.ToKeyBinding(),
 	}
@@ -413,7 +448,7 @@ func NewAppKeyMap(cfg *Config) AppKeyMap {
 func (k AppKeyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.Up, k.Down, k.Select, k.Remove,
-		k.Scan, k.ToggleAutoConnect, k.ToggleHidden, k.NextPane, k.PrevPane, k.Quit,
+		k.Scan, k.ToggleAutoConnect, k.ToggleHidden, k.SetDns, k.NextPane, k.PrevPane, k.Quit,
 	}
 }
 
@@ -421,6 +456,6 @@ func (k AppKeyMap) ShortHelp() []key.Binding {
 func (k AppKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.NextPane, k.PrevPane},
-		{k.Select, k.Remove, k.Scan, k.ToggleAutoConnect, k.ToggleHidden, k.Quit},
+		{k.Select, k.Remove, k.Scan, k.ToggleAutoConnect, k.ToggleHidden, k.SetDns, k.Quit},
 	}
 }

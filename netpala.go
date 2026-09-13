@@ -32,9 +32,11 @@ type NetpalaData struct {
 	Form         models.WpaEapForm
 	Confirmation models.Confirmation
 	PasswordForm models.PasswordInput
+	DnsForm      models.DnsSelect
 
 	SelectedNetwork common.ScannedNetwork
-	PopupState      int // -1: no popup, 0: form, 1: confirm
+	DnsTarget       common.KnownNetwork
+	PopupState      int // -1: no popup, 0: form, 1: confirm, 2: password, 3: dns
 
 	Alert               bubbleup.AlertModel
 	InitialLoadComplete bool
@@ -149,6 +151,7 @@ func NetpalaModel() NetpalaData {
 
 		PasswordForm: models.ModelPasswordInput(cfg.Colors),
 		Form:         models.ModelWpaEapForm(cfg.Colors),
+		DnsForm:      models.ModelDnsSelect(cfg.Colors, cfg.DNS.DnscryptAddresses),
 		Overlay: overlay.Model{
 			XPosition: overlay.Left,
 			YPosition: overlay.Center,
@@ -277,6 +280,45 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			newPasswordInput, cmd = m.PasswordForm.Update(msg)
 			m.PasswordForm = newPasswordInput.(models.PasswordInput)
 			// Return the confirmation model and any command it produced
+			return m, cmd
+		}
+	case 3:
+		// Handle the DNS provider picker
+		switch msg := msg.(type) {
+		case common.ExitFormMsg:
+			m.PopupState = -1
+			m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.DNS.DnscryptAddresses)
+			return m, nil
+
+		case common.SubmitDnsMsg:
+			m.PopupState = -1
+			target := m.DnsTarget
+			m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.DNS.DnscryptAddresses)
+
+			// Resolve against the configured list, not the package defaults, so
+			// a DNSCrypt proxy on a non-default address is honoured.
+			provider := common.DNSProviderByIDFor(msg.ProviderID, m.Config.DNS.DnscryptAddresses)
+			v4, v6 := provider.V4, provider.V6
+			if provider.ID == common.DNSModeCustom {
+				parsedV4, parsedV6, err := common.ParseDNSServers(msg.Custom)
+				if err != nil {
+					return m, func() tea.Msg { return common.ErrMsg{Err: err} }
+				}
+				v4, v6 = parsedV4, parsedV6
+			}
+
+			// Only re-activate when this profile is the live connection.
+			devicePath := godbus.ObjectPath("/")
+			if target.Connected && len(m.DeviceData) > 0 {
+				devicePath = m.DeviceData[0].Path
+			}
+
+			return m, dbus.SetDnsCmd(m.Conn, target.Path, devicePath, provider, v4, v6, target.Connected)
+
+		default:
+			var newDnsForm tea.Model
+			newDnsForm, cmd = m.DnsForm.Update(msg)
+			m.DnsForm = newDnsForm.(models.DnsSelect)
 			return m, cmd
 		}
 	}
@@ -501,6 +543,25 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, dbus.ToggleHiddenCmd(m.Conn, selectedNetwork.Path, selectedNetwork.Hidden)
 			}
 		}
+
+		// DNS provider switcher (only for known networks)
+		if m.Config.KeyBindings.SetDns.Matches(keyStr) {
+			if m.selectedBox == 0 && len(m.KnownNetworks) > 0 {
+				m.DnsTarget = m.KnownNetworks[m.SelectedEntry]
+
+				m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.DNS.DnscryptAddresses)
+				m.DnsForm.SSID = m.DnsTarget.SSID
+				m.DnsForm.SelectProvider(m.DnsTarget.DNSMode, m.DnsTarget.DNSServers)
+
+				// If the profile already uses DNSCrypt, check the proxy is up
+				// before the user has a chance to re-apply it.
+				probeCmd := m.DnsForm.ProbeCmdIfNeeded()
+
+				m.PopupState = 3
+				m.Overlay = updateOverlayModel(m, &m.DnsForm)
+				return m, probeCmd
+			}
+		}
 	}
 
 	var updatedAlert tea.Model
@@ -537,6 +598,9 @@ func (m NetpalaData) View() string {
 		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
 	case 2:
 		m.Overlay = updateOverlayModel(m, &m.PasswordForm)
+		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
+	case 3:
+		m.Overlay = updateOverlayModel(m, &m.DnsForm)
 		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
 	default:
 		return m.Alert.Render(m.Tables.View() + m.StatusBar.View())

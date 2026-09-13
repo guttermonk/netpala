@@ -281,21 +281,132 @@ func DeleteConnectionCmd(conn *dbus.Conn, connectionPath dbus.ObjectPath) tea.Cm
 	}
 }
 
-// cleanSettingsForUpdate removes fields that have incompatible types between GetSettings and Update.
-// NetworkManager returns some fields (like ipv4/ipv6 addresses) in a different format than Update expects.
+// cleanSettingsForUpdate removes the deprecated address/route fields, which
+// GetSettings returns in a legacy format that Update rejects. The modern
+// "address-data"/"route-data" equivalents round-trip fine and are kept, so a
+// profile using a static IP survives an update untouched.
 func cleanSettingsForUpdate(settings map[string]map[string]dbus.Variant) {
-	// Fields that have type mismatches between GetSettings and Update
-	problematicFields := map[string][]string{
-		"ipv4": {"addresses", "routes", "dns", "address-data", "route-data"},
-		"ipv6": {"addresses", "routes", "dns", "address-data", "route-data"},
+	for _, section := range []string{"ipv4", "ipv6"} {
+		if settings[section] == nil {
+			continue
+		}
+		for _, field := range []string{"addresses", "routes"} {
+			delete(settings[section], field)
+		}
 	}
+}
 
-	for section, fields := range problematicFields {
-		if settings[section] != nil {
-			for _, field := range fields {
-				delete(settings[section], field)
+// ipMethodAcceptsDNS reports whether an ipv4/ipv6 section's method allows
+// nameservers. NetworkManager rejects an Update that sets "dns" on a disabled
+// or link-local stack, which is common for ipv6 on locked-down profiles.
+func ipMethodAcceptsDNS(sec map[string]dbus.Variant) bool {
+	if sec == nil {
+		return false
+	}
+	v, ok := sec["method"]
+	if !ok {
+		return true // absent method defaults to "auto"
+	}
+	switch m, _ := v.Value().(string); m {
+	case "disabled", "ignore", "link-local":
+		return false
+	}
+	return true
+}
+
+// SetDnsCmd rewrites a saved connection's nameservers to the given provider.
+// DHCP clears the explicit servers and re-enables the ones the router supplies;
+// every other provider pins its own and sets ignore-auto-dns. When the profile
+// is the live connection it is re-activated so the change takes effect now
+// rather than at the next reconnect.
+func SetDnsCmd(
+	conn *dbus.Conn,
+	connectionPath dbus.ObjectPath,
+	devicePath dbus.ObjectPath,
+	provider common.DNSProvider,
+	v4, v6 []string,
+	reactivate bool,
+) tea.Cmd {
+	return func() tea.Msg {
+		connObj := conn.Object(network.NMDest, connectionPath)
+
+		// 1. Get current settings
+		var settings map[string]map[string]dbus.Variant
+		call := connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.GetSettings", 0)
+		if call.Err != nil {
+			return common.ErrMsg{Err: fmt.Errorf("failed to get connection settings: %w", call.Err)}
+		}
+		if err := call.Store(&settings); err != nil {
+			return common.ErrMsg{Err: fmt.Errorf("failed to parse connection settings: %w", err)}
+		}
+
+		// 2. Remove fields with incompatible types
+		cleanSettingsForUpdate(settings)
+
+		// 3. Ensure the IP sections exist; a profile without one defaults to auto.
+		for _, section := range []string{"ipv4", "ipv6"} {
+			if settings[section] == nil {
+				settings[section] = map[string]dbus.Variant{
+					"method": dbus.MakeVariant("auto"),
+				}
 			}
 		}
+
+		// 4. Apply the provider. DHCP means "no explicit servers", which is the
+		//    absence of the key plus ignore-auto-dns turned back off.
+		if provider.ID == common.DNSModeDHCP {
+			for _, section := range []string{"ipv4", "ipv6"} {
+				delete(settings[section], "dns")
+				settings[section]["ignore-auto-dns"] = dbus.MakeVariant(false)
+			}
+		} else {
+			if len(v4) == 0 && len(v6) == 0 {
+				return common.ErrMsg{Err: fmt.Errorf("no DNS servers to apply for %s", provider.Label)}
+			}
+
+			if len(v4) > 0 && ipMethodAcceptsDNS(settings["ipv4"]) {
+				variant, err := network.DNSv4Variant(v4)
+				if err != nil {
+					return common.ErrMsg{Err: err}
+				}
+				settings["ipv4"]["dns"] = variant
+				settings["ipv4"]["ignore-auto-dns"] = dbus.MakeVariant(true)
+			}
+
+			if len(v6) > 0 && ipMethodAcceptsDNS(settings["ipv6"]) {
+				variant, err := network.DNSv6Variant(v6)
+				if err != nil {
+					return common.ErrMsg{Err: err}
+				}
+				settings["ipv6"]["dns"] = variant
+			} else {
+				// Drop stale servers from a previous selection rather than
+				// mixing them with the new provider.
+				delete(settings["ipv6"], "dns")
+			}
+
+			// Suppress the router's IPv6 resolvers either way. A v4-only
+			// provider (DNSCrypt on 127.0.0.1, a v4-only custom list) would
+			// otherwise leave DHCPv6/RA servers in resolv.conf, and queries
+			// landing on those bypass the chosen provider entirely.
+			settings["ipv6"]["ignore-auto-dns"] = dbus.MakeVariant(true)
+		}
+
+		// 5. Update the connection
+		call = connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.Update", 0, settings)
+		if call.Err != nil {
+			return common.ErrMsg{Err: fmt.Errorf("failed to update DNS settings: %w", call.Err)}
+		}
+
+		// 6. Re-activate so resolv.conf is rewritten immediately.
+		var cmds []tea.Cmd
+		if reactivate && devicePath != "" && devicePath != "/" {
+			cmds = append(cmds, ConnectToNetworkCmd(conn, connectionPath, devicePath))
+		}
+		cmds = append(cmds, func() tea.Msg {
+			return common.KnownNetworksUpdateMsg(network.GetKnownNetworks(conn))
+		})
+		return tea.Batch(cmds...)
 	}
 }
 
