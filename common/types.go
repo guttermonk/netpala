@@ -20,7 +20,18 @@ import (
 // // Message sent from our debounce timer to perform a scan.
 // type performScanRefreshMsg struct{}
 
+// Pane identifiers, in the order the panes appear on screen. Stored in
+// NetpalaData.selectedBox, so panes that are hidden never hold the selection.
+const (
+	PaneKnown = iota
+	PaneScanned
+	PaneVPN
+	PaneSecurity
+	PaneDevice
+)
+
 type VpnUpdateMsg []VpnConnection
+type SecurityUpdateMsg []SecurityService
 type DeviceUpdateMsg []Device
 type KnownNetworksUpdateMsg []KnownNetwork
 type ScannedNetworksUpdateMsg []ScannedNetwork
@@ -44,6 +55,7 @@ type SubmitConfirmationMsg struct {
 type SubmitPasswordMsg struct {
 	Value string
 }
+
 // DnsProbeMsg carries the result of a background resolver liveness check.
 type DnsProbeMsg struct {
 	Addrs []string
@@ -87,6 +99,33 @@ type ScannedNetwork struct {
 	SSID     string
 	Security string
 	Signal   int
+}
+
+// SecurityServiceConfig names a systemd unit netpala may show and toggle.
+// Toggling also requires a polkit rule permitting manage-units on that unit.
+type SecurityServiceConfig struct {
+	Name string `toml:"name"`
+	Unit string `toml:"unit"`
+	// StateFile, when set, records "on"/"off" after a successful toggle so a
+	// boot-time unit can replay the choice. NixOS cannot use systemctl enable
+	// for this: /etc/systemd/system is a read-only symlink into the store.
+	StateFile string `toml:"state_file"`
+	// ProvidesDNS marks a unit that answers DNS on loopback. Stopping one
+	// while a network profile resolves via loopback takes out name resolution
+	// entirely, so netpala asks for confirmation first.
+	ProvidesDNS bool `toml:"provides_dns"`
+}
+
+// SecurityService is the live state of one such unit, read from systemd
+// rather than remembered, so external systemctl changes show up correctly.
+type SecurityService struct {
+	Name        string
+	Unit        string
+	StateFile   string
+	ProvidesDNS bool
+	Active      bool   // ActiveState == "active"
+	State       string // ActiveState verbatim: active, inactive, failed, activating
+	SubState    string
 }
 
 type VpnConnection struct {

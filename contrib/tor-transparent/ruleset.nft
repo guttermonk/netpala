@@ -1,0 +1,124 @@
+#!/usr/bin/env -S nft -f
+#
+# Transparent Tor proxying, fail-closed.
+#
+# The single property this ruleset exists to guarantee: a packet that cannot
+# be carried by Tor is DROPPED, never sent out in the clear. Every accept
+# below is deliberate. If you add one, be certain it cannot carry traffic
+# that identifies you.
+#
+# Loading this file is safe to do before tor is ready: tor's own traffic is
+# exempted by uid, so it can bootstrap while everything else stays blocked.
+#
+# Assumes (set by tor-transparent.nix):
+#   TransPort              127.0.0.1:9040
+#   DNSPort                127.0.0.1:9053
+#   VirtualAddrNetworkIPv4 10.192.0.0/10
+#   AutomapHostsOnResolve  1
+
+# Declare-then-delete is the idempotent load idiom: the declaration makes the
+# delete succeed even on a first run where the table does not yet exist.
+table ip tor_trans
+delete table ip tor_trans
+
+table ip tor_trans {
+
+    # Destinations that must NOT be routed through Tor: loopback, LAN,
+    # link-local, multicast, broadcast, and the documentation ranges.
+    #
+    # WARNING: Tor's virtual .onion range (10.192.0.0/10) sits *inside*
+    # 10.0.0.0/8. Any rule consulting this set must come after the .onion
+    # redirect, or onion addresses will be sent to your LAN instead of Tor.
+    set direct_dest {
+        type ipv4_addr
+        flags interval
+        elements = {
+            0.0.0.0/8,
+            10.0.0.0/8,
+            100.64.0.0/10,
+            127.0.0.0/8,
+            169.254.0.0/16,
+            172.16.0.0/12,
+            192.0.0.0/24,
+            192.0.2.0/24,
+            192.88.99.0/24,
+            192.168.0.0/16,
+            198.18.0.0/15,
+            198.51.100.0/24,
+            203.0.113.0/24,
+            224.0.0.0/4,
+            240.0.0.0/4
+        }
+    }
+
+    chain redirect_output {
+        type nat hook output priority dstnat; policy accept;
+
+        # Tor's own traffic leaves untouched. Without this the redirect
+        # feeds tor back into itself and nothing works.
+        meta skuid "tor" return
+
+        # Already-local traffic is not our business.
+        oif "lo" return
+
+        # .onion first -- see the WARNING on direct_dest above.
+        ip daddr 10.192.0.0/10 meta l4proto tcp redirect to :9040
+
+        # All DNS to Tor's resolver, TCP and UDP alike. Deliberately ahead
+        # of direct_dest so LAN resolvers are bypassed too: querying the
+        # router would tell it every host this machine visits.
+        meta l4proto { tcp, udp } th dport 53 redirect to :9053
+
+        # LAN, DHCP, mDNS stay direct.
+        ip daddr @direct_dest return
+
+        # Everything else TCP goes through Tor.
+        meta l4proto tcp redirect to :9040
+    }
+
+    chain filter_output {
+        type filter hook output priority filter; policy drop;
+
+        meta skuid "tor" accept
+
+        # Covers traffic the nat chain just rewrote to 127.0.0.1:9040/9053,
+        # which is routed out via lo.
+        oif "lo" accept
+
+        ct state established,related accept
+
+        # LAN, DHCP broadcast, mDNS.
+        ip daddr @direct_dest accept
+
+        # Anything reaching here is UDP (other than DNS), ICMP, or some other
+        # protocol Tor cannot carry. Falling through to `policy drop` IS the
+        # leak prevention. The counter is for diagnosis only -- do not
+        # "fix" a nonzero count by adding an accept.
+        counter comment "tor_trans: dropped, cannot be carried by Tor"
+    }
+}
+
+# Tor carries no IPv6 in this configuration, so IPv6 must not leave at all.
+# Without this, a dual-stack network silently routes everything around Tor.
+#
+# reject (rather than drop) is used so Happy Eyeballs fails over to IPv4
+# immediately instead of stalling. The rejection is generated locally, so
+# nothing reaches the network either way.
+table ip6 tor_trans6
+delete table ip6 tor_trans6
+
+table ip6 tor_trans6 {
+    chain filter_output {
+        type filter hook output priority filter; policy drop;
+
+        oif "lo" accept
+        ct state established,related accept
+
+        # Link-local and multicast never leave the segment.
+        ip6 daddr fe80::/10 accept
+        ip6 daddr ff00::/8 accept
+
+        counter comment "tor_trans: IPv6 blocked, Tor path is IPv4 only"
+        reject with icmpv6 admin-prohibited
+    }
+}

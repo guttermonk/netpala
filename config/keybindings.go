@@ -57,11 +57,36 @@ type DNS struct {
 	DnscryptAddresses []string `toml:"dnscrypt_addresses"`
 }
 
+// Security lists systemd units shown in the Security pane. Units that are not
+// installed are skipped at runtime, so listing one costs nothing.
+type Security struct {
+	Services []common.SecurityServiceConfig `toml:"services"`
+}
+
 // Config holds the entire application configuration
 type Config struct {
 	KeyBindings KeyBindings `toml:"keybindings"`
 	Colors      Colors      `toml:"colors"`
 	DNS         DNS         `toml:"dns"`
+	Security    Security    `toml:"security"`
+}
+
+// DefaultSecurity returns the default Security pane configuration
+func DefaultSecurity() Security {
+	return Security{
+		Services: []common.SecurityServiceConfig{
+			{
+				Name:      "Tor",
+				Unit:      "tor-transparent.service",
+				StateFile: "/var/lib/netpala/tor",
+			},
+			{
+				Name:        "DNSCrypt",
+				Unit:        "dnscrypt-proxy2.service",
+				ProvidesDNS: true,
+			},
+		},
+	}
 }
 
 // DefaultDNS returns the default DNS switcher configuration
@@ -143,6 +168,7 @@ func DefaultConfig() Config {
 		KeyBindings: DefaultKeyBindings(),
 		Colors:      DefaultColors(),
 		DNS:         DefaultDNS(),
+		Security:    DefaultSecurity(),
 	}
 }
 
@@ -341,6 +367,9 @@ func mergeWithDefaults(cfg Config) Config {
 
 	if len(cfg.DNS.DnscryptAddresses) == 0 {
 		cfg.DNS = DefaultDNS()
+	}
+	if len(cfg.Security.Services) == 0 {
+		cfg.Security = DefaultSecurity()
 	}
 
 	return cfg

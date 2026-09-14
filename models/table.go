@@ -17,6 +17,7 @@ type TableData struct {
 	deviceData      []common.Device
 	stationData     []common.Device
 	vpnData         []common.VpnConnection
+	securityData    []common.SecurityService
 	knownNetworks   []common.KnownNetwork
 	scannedNetworks []common.ScannedNetwork
 	
@@ -32,8 +33,9 @@ func TableModel(
 	knownNets []common.KnownNetwork,
 	scannedNets []common.ScannedNetwork,
 	vpnData []common.VpnConnection,
+	securityData []common.SecurityService,
 	devData []common.Device,
-	
+
 	colors config.Colors,
 ) TableData {
 	return TableData{
@@ -44,9 +46,10 @@ func TableModel(
 
 		deviceData:      devData,
 		vpnData:         vpnData,
+		securityData:    securityData,
 		knownNetworks:   knownNets,
 		scannedNetworks: scannedNets,
-		
+
 		colors:          colors,
 	}
 }
@@ -72,6 +75,8 @@ func (m TableData) View() string {
 		tableData = common.FormatStationData(m.stationData)
 	} else if m.vpnData != nil {
 		tableData = common.FormatVpnData(m.vpnData)
+	} else if m.securityData != nil {
+		tableData = common.FormatSecurityData(m.securityData)
 	} else if m.knownNetworks != nil {
 		tableData = common.FormatKnownNetworksData(m.knownNetworks, m.selectedRow, m.height)
 	} else {

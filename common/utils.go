@@ -230,6 +230,35 @@ func FormatVpnData(vpns []VpnConnection) [][]string {
 	return data
 }
 
+func FormatSecurityData(services []SecurityService) [][]string {
+	data := [][]string{
+		padHeaders([]string{"", "Service", "Unit", "State"}, []int{5, 16, -1, 16}), {""},
+	}
+	for _, s := range services {
+		marker := "     "
+		if s.Active {
+			marker = "  >  "
+		}
+
+		// SubState is the more useful word when it differs ("running" rather
+		// than "active", "dead" rather than "inactive").
+		state := s.State
+		if s.SubState != "" && s.SubState != s.State {
+			state = s.SubState
+		}
+
+		row := []string{marker, s.Name, s.Unit, state}
+		for i := range row {
+			if lipgloss.Width(row[i]) > lipgloss.Width(data[0][i]) {
+				row[i] = row[i][:max(0, lipgloss.Width(data[0][i])-3)] + "..."
+			}
+		}
+
+		data = append(data, row)
+	}
+	return data
+}
+
 func FormatKnownNetworksData(networks []KnownNetwork, selectedRow int, height int) [][]string {
 	base := [][]string{
 		padHeaders([]string{"", "Name", "Security", "DNS", "Hidden", "Auto-Connect", "Signal"}, []int{5, -1, 12, 11, 10, 14, 9}), {""},
