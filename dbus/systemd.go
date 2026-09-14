@@ -53,7 +53,9 @@ func ToggleSecurityServiceCmd(conn *dbus.Conn, svc common.SecurityService, confi
 		cmds = append(cmds, tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg {
 			return common.SecurityUpdateMsg(network.GetSecurityServices(conn, configured))
 		}))
-		return tea.Batch(cmds...)
+		// BatchMsg, not Batch: this is returned as a Msg, and the runtime only
+		// dispatches BatchMsg. Returning a Cmd here silently drops it.
+		return tea.BatchMsg(cmds)
 	}
 }
 

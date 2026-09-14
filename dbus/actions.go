@@ -103,16 +103,20 @@ func AddAndConnectToNetworkCmd(conn *dbus.Conn, net common.ScannedNetwork, passw
 		// 7. Batch commands based on success
 		var batchCmds []tea.Cmd
 		batchCmds = append(batchCmds, func() tea.Msg { return optimisticMsg }) // Send optimistic update first
-		batchCmds = append(batchCmds, refreshCmd)                             // Schedule real refresh
+		batchCmds = append(batchCmds, refreshCmd)                              // Schedule real refresh
 
 		if err == nil {
 			// If we got the path, attempt connection
 			batchCmds = append(batchCmds, ConnectToNetworkCmd(conn, newConnectionPath, devicePath))
 		} else {
 			// If we didn't get the path, report the error but still refresh
-			batchCmds = append(batchCmds, func() tea.Msg { return common.ErrMsg{Err: fmt.Errorf("added connection but failed to read path: %w", err)} })
+			batchCmds = append(batchCmds, func() tea.Msg {
+				return common.ErrMsg{Err: fmt.Errorf("added connection but failed to read path: %w", err)}
+			})
 		}
-		return tea.Batch(batchCmds...)
+		// BatchMsg, not Batch: this is returned as a Msg, and the runtime only
+		// dispatches BatchMsg. Returning a Cmd here silently drops it.
+		return tea.BatchMsg(batchCmds)
 	}
 }
 
@@ -198,16 +202,20 @@ func AddAndConnectEAPCmd(conn *dbus.Conn, config map[string]string, devicePath d
 		// 9. Batch commands based on success
 		var batchCmds []tea.Cmd
 		batchCmds = append(batchCmds, func() tea.Msg { return optimisticMsg }) // Send optimistic update first
-		batchCmds = append(batchCmds, refreshCmd)                             // Schedule real refresh
+		batchCmds = append(batchCmds, refreshCmd)                              // Schedule real refresh
 
 		if err == nil {
 			// If we got the path, attempt connection
 			batchCmds = append(batchCmds, ConnectToNetworkCmd(conn, newConnectionPath, devicePath))
 		} else {
 			// If we didn't get the path, report the error but still refresh
-			batchCmds = append(batchCmds, func() tea.Msg { return common.ErrMsg{Err: fmt.Errorf("added EAP connection but failed to read path: %w", err)} })
+			batchCmds = append(batchCmds, func() tea.Msg {
+				return common.ErrMsg{Err: fmt.Errorf("added EAP connection but failed to read path: %w", err)}
+			})
 		}
-		return tea.Batch(batchCmds...)
+		// BatchMsg, not Batch: this is returned as a Msg, and the runtime only
+		// dispatches BatchMsg. Returning a Cmd here silently drops it.
+		return tea.BatchMsg(batchCmds)
 	}
 }
 
@@ -232,9 +240,9 @@ func ToggleVpnCmd(conn *dbus.Conn, vpnPath dbus.ObjectPath, activePath dbus.Obje
 			call = nm.Call(
 				"org.freedesktop.NetworkManager.ActivateConnection",
 				0,
-				vpnPath,                // Saved connection path
-				dbus.ObjectPath("/"),   // device path is not needed for VPN
-				dbus.ObjectPath("/"),   // specific object path
+				vpnPath,              // Saved connection path
+				dbus.ObjectPath("/"), // device path is not needed for VPN
+				dbus.ObjectPath("/"), // specific object path
 			)
 		}
 
@@ -406,7 +414,9 @@ func SetDnsCmd(
 		cmds = append(cmds, func() tea.Msg {
 			return common.KnownNetworksUpdateMsg(network.GetKnownNetworks(conn))
 		})
-		return tea.Batch(cmds...)
+		// BatchMsg, not Batch: this is returned as a Msg, and the runtime only
+		// dispatches BatchMsg. Returning a Cmd here silently drops it.
+		return tea.BatchMsg(cmds)
 	}
 }
 
