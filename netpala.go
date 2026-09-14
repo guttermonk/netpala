@@ -7,7 +7,6 @@ import (
 	"netpala/dbus"
 	"netpala/models"
 	"netpala/network"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,10 +38,15 @@ type NetpalaData struct {
 	SelectedNetwork common.ScannedNetwork
 	DnsTarget       common.KnownNetwork
 
-	// Unit that has been warned about and is cleared for stopping on the next
-	// select press. Reset whenever the selection moves, so the confirmation
-	// cannot be spent on a different row than the one it was given for.
-	securityArmedUnit string
+	// Unit waiting to be stopped once the live connection has been moved off
+	// it. Set when the DNS picker is opened to choose a replacement resolver,
+	// cleared if that choice is cancelled.
+	pendingStopUnit string
+
+	// Which profile was live at the last refresh, so connecting to a network
+	// can be told apart from merely refreshing while already on it.
+	lastConnectedPath godbus.ObjectPath
+	connectionTracked bool
 	PopupState        int // -1: no popup, 0: form, 1: confirm, 2: password, 3: dns
 
 	Alert               bubbleup.AlertModel
@@ -128,9 +132,6 @@ func (m NetpalaData) paneEntryCount(pane int) int {
 func (m *NetpalaData) stepPane(delta int) {
 	panes := m.visiblePanes()
 
-	// A confirmation is only valid for the row it was given for.
-	m.securityArmedUnit = ""
-
 	current := 0
 	for i, p := range panes {
 		if p == m.selectedBox {
@@ -143,55 +144,120 @@ func (m *NetpalaData) stepPane(delta int) {
 	m.SelectedEntry = 0
 }
 
-// networksDependingOn lists the saved profiles whose DNS would stop resolving
-// if this unit were stopped. A profile pointed at loopback is relying on some
-// local daemon; if that daemon is the one being stopped, name resolution dies
-// with it.
-func (m NetpalaData) networksDependingOn(svc common.SecurityService) []string {
-	if !svc.ProvidesDNS {
-		return nil
-	}
-	var names []string
-	for _, n := range m.KnownNetworks {
-		if n.DNSMode != common.DNSModeDNSCrypt {
-			continue
+// dnsService returns the configured unit that answers DNS on loopback, if one
+// is installed. It is the other half of the DNSCrypt option in the DNS picker:
+// the profile setting says where to send queries, this unit is what answers
+// them, and netpala keeps the two in step for the live connection.
+func (m NetpalaData) dnsService() (common.SecurityService, bool) {
+	for _, s := range m.SecurityData {
+		if s.ProvidesDNS {
+			return s, true
 		}
-		// The live connection is the one that breaks immediately, so it goes
-		// first and is called out.
-		if n.Connected {
-			names = append([]string{n.SSID + " (connected)"}, names...)
-			continue
-		}
-		names = append(names, n.SSID)
 	}
-	return names
+	return common.SecurityService{}, false
 }
 
-// securityStopWarning describes what stopping this unit would take down, or ""
-// if nothing depends on it. Starting a unit can never break anything, so the
-// guard only applies in the stop direction.
-func (m NetpalaData) securityStopWarning(svc common.SecurityService) string {
-	if !svc.Active {
-		return ""
+// connectedNetwork returns the profile currently in use.
+func (m NetpalaData) connectedNetwork() (common.KnownNetwork, bool) {
+	for _, n := range m.KnownNetworks {
+		if n.Connected {
+			return n, true
+		}
 	}
-	affected := m.networksDependingOn(svc)
-	if len(affected) == 0 {
-		return ""
+	return common.KnownNetwork{}, false
+}
+
+// startDNSServiceCmd starts the local resolver if it is installed and not
+// already running. Returns nil when there is nothing to do, so callers can
+// hand the result straight to tea.Sequence.
+func (m NetpalaData) startDNSServiceCmd() tea.Cmd {
+	svc, ok := m.dnsService()
+	if !ok || svc.Active {
+		return nil
+	}
+	return dbus.ToggleSecurityServiceCmd(m.Conn, svc, m.Config.Security.Services)
+}
+
+// setConnectedDNSCmd points the live connection at the local resolver. Used
+// when the resolver is switched on from the Security pane, so turning it on
+// actually takes effect instead of only arming it for later.
+func (m NetpalaData) setConnectedDNSCmd() tea.Cmd {
+	target, ok := m.connectedNetwork()
+	if !ok || target.DNSMode == common.DNSModeDNSCrypt {
+		return nil // nothing connected, or already pointed at it
 	}
 
-	shown := affected
-	suffix := ""
-	if len(shown) > 3 {
-		shown, suffix = shown[:3], fmt.Sprintf(" and %d more", len(affected)-3)
+	provider := common.DNSProviderByIDFor(common.DNSModeDNSCrypt, m.Config.DNS.DnscryptAddresses)
+
+	devicePath := godbus.ObjectPath("/")
+	if len(m.DeviceData) > 0 {
+		devicePath = m.DeviceData[0].Path
 	}
-	return fmt.Sprintf("%s resolves DNS for %s%s - stopping it breaks name resolution. Press select again to stop anyway.",
-		svc.Name, strings.Join(shown, ", "), suffix)
+	return dbus.SetDnsCmd(m.Conn, target.Path, devicePath, provider, provider.V4, provider.V6, true)
+}
+
+// onConnectionChanged brings the local resolver up when netpala connects to a
+// network whose profile asks for it.
+//
+// This is what makes setting DNSCrypt on an inactive profile meaningful: the
+// setting is saved now and the resolver follows when that network is actually
+// activated. Only transitions count, so a refresh while already connected does
+// not keep re-issuing the start, and the first observation after launch just
+// seeds the tracker rather than starting services merely because netpala ran.
+func (m *NetpalaData) onConnectionChanged() tea.Cmd {
+	current, _ := m.connectedNetwork()
+
+	if !m.connectionTracked {
+		m.connectionTracked = true
+		m.lastConnectedPath = current.Path
+		return nil
+	}
+	if current.Path == m.lastConnectedPath {
+		return nil
+	}
+	m.lastConnectedPath = current.Path
+
+	if current.DNSMode != common.DNSModeDNSCrypt {
+		return nil
+	}
+	return m.startDNSServiceCmd()
+}
+
+// stopWouldBreakDNS reports whether stopping this unit would leave the live
+// connection resolving through something that is no longer there.
+//
+// Saved profiles that are not connected do not count: their resolver is
+// started again by onConnectionChanged when they are next activated.
+func (m NetpalaData) stopWouldBreakDNS(svc common.SecurityService) bool {
+	if !svc.ProvidesDNS || !svc.Active {
+		return false
+	}
+	current, ok := m.connectedNetwork()
+	return ok && current.DNSMode == common.DNSModeDNSCrypt
+}
+
+// openDnsPickerForStop asks where DNS should go before the resolver is taken
+// away, so there is no window where resolv.conf points at a dead listener.
+// The unit is stopped only once a replacement has been applied.
+func (m *NetpalaData) openDnsPickerForStop(svc common.SecurityService) {
+	target, _ := m.connectedNetwork()
+	m.DnsTarget = target
+	m.pendingStopUnit = svc.Unit
+
+	m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.DNS.DnscryptAddresses)
+	m.DnsForm.SSID = target.SSID
+	m.DnsForm.Notice = fmt.Sprintf("Switching %s off - pick DNS for %s first", svc.Name, target.SSID)
+	// Start on DHCP rather than the current DNSCrypt selection: the point of
+	// this popup is to move off it.
+	m.DnsForm.SelectProvider(common.DNSModeDHCP, nil)
+
+	m.PopupState = 3
+	m.Overlay = updateOverlayModel(*m, &m.DnsForm)
 }
 
 // clampSelection keeps the cursor inside the pane after a refresh shrinks it,
 // and moves off a pane that has just been hidden.
 func (m *NetpalaData) clampSelection() {
-	m.securityArmedUnit = ""
 	visible := false
 	for _, p := range m.visiblePanes() {
 		if p == m.selectedBox {
@@ -415,6 +481,10 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case common.ExitFormMsg:
 			m.PopupState = -1
 			m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.DNS.DnscryptAddresses)
+
+			// Backing out of "pick a replacement" means the resolver stays up.
+			// Stopping it anyway is the exact outage this flow exists to avoid.
+			m.pendingStopUnit = ""
 			return m, nil
 
 		case common.SubmitDnsMsg:
@@ -439,8 +509,41 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if target.Connected && len(m.DeviceData) > 0 {
 				devicePath = m.DeviceData[0].Path
 			}
+			setDns := dbus.SetDnsCmd(m.Conn, target.Path, devicePath, provider, v4, v6, target.Connected)
 
-			return m, dbus.SetDnsCmd(m.Conn, target.Path, devicePath, provider, v4, v6, target.Connected)
+			// Choosing DNSCrypt for the live connection also brings up the
+			// resolver that has to answer those queries. For a profile that is
+			// not connected the setting is saved but the resolver is left
+			// alone - it comes up when that network is activated.
+			if provider.ID == common.DNSModeDNSCrypt && target.Connected {
+				// Picking DNSCrypt while being asked to move off it means the
+				// user changed their mind; abandon the pending stop.
+				m.pendingStopUnit = ""
+
+				if start := m.startDNSServiceCmd(); start != nil {
+					// Sequence, not Batch: the resolver has to be listening
+					// before resolv.conf starts pointing at it.
+					return m, tea.Sequence(start, setDns)
+				}
+				return m, setDns
+			}
+
+			// A replacement was chosen for a resolver that is on its way out.
+			// Apply the new DNS first, then stop the unit, so there is never a
+			// moment where resolv.conf points at a listener that has gone.
+			if m.pendingStopUnit != "" {
+				unit := m.pendingStopUnit
+				m.pendingStopUnit = ""
+
+				for _, svc := range m.SecurityData {
+					if svc.Unit == unit && svc.Active {
+						stop := dbus.ToggleSecurityServiceCmd(m.Conn, svc, m.Config.Security.Services)
+						return m, tea.Sequence(setDns, stop)
+					}
+				}
+			}
+
+			return m, setDns
 
 		default:
 			var newDnsForm tea.Model
@@ -466,8 +569,13 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case common.KnownNetworksUpdateMsg:
 		m.FilterKnownFromScanned()
 		m.KnownNetworks = msg
+		m.clampSelection()
 
-		return m, dbus.WaitForDBusSignal(m.Conn, m.DBusSignals)
+		cmds := []tea.Cmd{dbus.WaitForDBusSignal(m.Conn, m.DBusSignals)}
+		if onConnect := m.onConnectionChanged(); onConnect != nil {
+			cmds = append(cmds, onConnect)
+		}
+		return m, tea.Batch(cmds...)
 
 	case common.ScannedNetworksUpdateMsg:
 		// The `nil` message is the trigger from the listener.
@@ -559,7 +667,6 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Up navigation
 		if m.Config.KeyBindings.Up.Matches(keyStr) {
-			m.securityArmedUnit = ""
 			if m.SelectedEntry > 0 {
 				m.SelectedEntry--
 			}
@@ -568,7 +675,6 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Down navigation
 		if m.Config.KeyBindings.Down.Matches(keyStr) {
-			m.securityArmedUnit = ""
 			if m.SelectedEntry < m.paneEntryCount(m.selectedBox)-1 {
 				m.SelectedEntry++
 			}
@@ -629,15 +735,27 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Toggle a systemd unit (Tor, DNSCrypt, ...)
 				selectedSvc := m.SecurityData[m.SelectedEntry]
 
-				// Stopping a resolver that networks point at kills DNS, so
-				// warn once and make the second press deliberate.
-				if warning := m.securityStopWarning(selectedSvc); warning != "" && m.securityArmedUnit != selectedSvc.Unit {
-					m.securityArmedUnit = selectedSvc.Unit
-					return m, m.Alert.NewAlertCmd(bubbleup.WarnKey, warning)
+				// Stopping the resolver the live connection is using would
+				// leave resolv.conf pointing at nothing. Rather than warn and
+				// let it happen, ask where DNS should go instead and stop the
+				// resolver only once the connection has been moved off it.
+				if m.stopWouldBreakDNS(selectedSvc) {
+					m.openDnsPickerForStop(selectedSvc)
+					return m, nil
 				}
 
-				m.securityArmedUnit = ""
-				return m, dbus.ToggleSecurityServiceCmd(m.Conn, selectedSvc, m.Config.Security.Services)
+				toggle := dbus.ToggleSecurityServiceCmd(m.Conn, selectedSvc, m.Config.Security.Services)
+
+				// Switching the local resolver on should actually route
+				// queries to it, otherwise it sits there answering nobody.
+				// Sequenced so it is listening before resolv.conf changes.
+				if selectedSvc.ProvidesDNS && !selectedSvc.Active {
+					if setDns := m.setConnectedDNSCmd(); setDns != nil {
+						return m, tea.Sequence(toggle, setDns)
+					}
+				}
+
+				return m, toggle
 			} else if m.selectedBox == common.PaneDevice && len(m.DeviceData) > 0 {
 				// Enable/Disable Wifi Card
 				return m, dbus.ToggleWifiCmd(m.Conn, !m.DeviceData[0].Powered)
@@ -707,21 +825,22 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m NetpalaData) View() string {
-	netsHeight := common.WindowDimensions().Height - 14
-	if len(m.VpnData) > 0 {
-		netsHeight -= 5
-	}
-	if len(m.SecurityData) > 0 {
-		netsHeight -= 3 + len(m.SecurityData)
-	}
+	// The VPN, Security and Device panes render one row per entry regardless
+	// of the height they are given, so the layout budgets on their real sizes
+	// and hands whatever is left to the two network lists.
+	layout := computeLayout(
+		common.WindowDimensions().Height,
+		len(m.KnownNetworks), len(m.ScannedNetworks),
+		len(m.VpnData), len(m.SecurityData), len(m.DeviceData),
+	)
 
 	m.Tables.SelectedBox = m.selectedBox
 	m.Tables.SelectedEntry = m.SelectedEntry
-	m.Tables.KnownHeight = netsHeight / 2
-	m.Tables.ScannedHeight = netsHeight - (netsHeight / 2)
-	m.Tables.VPNHeight = 5
-	m.Tables.SecurityHeight = 3 + len(m.SecurityData)
-	m.Tables.DeviceHeight = 5
+	m.Tables.KnownHeight = layout.Known
+	m.Tables.ScannedHeight = layout.Scanned
+	m.Tables.VPNHeight = len(m.VpnData)
+	m.Tables.SecurityHeight = len(m.SecurityData)
+	m.Tables.DeviceHeight = len(m.DeviceData)
 
 	m.Tables.DeviceData = m.DeviceData
 	m.Tables.VpnData = m.VpnData

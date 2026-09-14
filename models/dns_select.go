@@ -29,6 +29,10 @@ type DnsSelect struct {
 	ErrText   string
 	Colors    config.Colors
 
+	// Notice explains why the picker opened when netpala opened it rather
+	// than the user. Without it a popup appearing on its own is a mystery.
+	Notice string
+
 	// DNSCrypt points at a daemon netpala does not manage, so its liveness is
 	// probed in the background and applying a dead one needs a second Enter.
 	probeState int
@@ -228,6 +232,12 @@ func (m DnsSelect) View() string {
 	rows := []string{
 		titleStyle.Render(fmt.Sprintf("DNS for %s", m.SSID)),
 		"",
+	}
+	if m.Notice != "" {
+		rows = append(rows,
+			lipgloss.NewStyle().Foreground(lipgloss.Color(m.Colors.ActiveText)).
+				Width(54).Render(m.Notice),
+			"")
 	}
 	for i, p := range m.Providers {
 		marker := "  "
