@@ -160,17 +160,7 @@ func FormatDeviceData(devices []Device) [][]string {
 			powered = "On"
 		}
 
-		var state string
-		switch d.State {
-		case -1:
-			state = "disconnected"
-		case 0:
-			state = "connecting"
-		case 1:
-			state = "connected"
-		}
-
-		row := []string{d.Name, d.Mode, powered, state, strconv.FormatBool(d.Scanning), freqToBand(d.Frequency), d.Security}
+		row := []string{d.Name, d.Mode, powered, DeviceStateLabel(d.State), strconv.FormatBool(d.Scanning), freqToBand(d.Frequency), d.Security}
 		for i := range row {
 			if lipgloss.Width(row[i]) > lipgloss.Width(data[0][i]) {
 				row[i] = row[i][:max(0, lipgloss.Width(data[0][i])-3)] + "..."
@@ -187,16 +177,7 @@ func FormatStationData(devices []Device) [][]string {
 		padHeaders([]string{"State", "Scanning", "Frequency", "Security"}, []int{-1, -1, -1, -1}), {""},
 	}
 	for _, d := range devices {
-		var state string
-		switch d.State {
-		case -1:
-			state = "disconnected"
-		case 0:
-			state = "connecting"
-		case 1:
-			state = "connected"
-		}
-		row := []string{state, strconv.FormatBool(d.Scanning), freqToBand(d.Frequency), d.Security}
+		row := []string{DeviceStateLabel(d.State), strconv.FormatBool(d.Scanning), freqToBand(d.Frequency), d.Security}
 		for i := range row {
 			if lipgloss.Width(row[i]) > lipgloss.Width(data[0][i]) {
 				row[i] = row[i][:max(0, lipgloss.Width(data[0][i])-3)] + "..."
