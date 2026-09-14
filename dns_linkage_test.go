@@ -3,6 +3,7 @@ package main
 import (
 	"netpala/common"
 	"netpala/config"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,6 +24,9 @@ func linkModel(resolverActive bool, networks []common.KnownNetwork) NetpalaData 
 		},
 		KnownNetworks: networks,
 		DeviceData:    []common.Device{{Path: godbus.ObjectPath("/dev/0")}},
+		// Explicit, so the tests do not depend on the host resolv.conf.
+		EffectiveDNS: []string{"192.168.1.1"},
+		AppliedDNS:   []string{"192.168.1.1"},
 	}
 }
 
@@ -259,5 +263,61 @@ func TestChoosingDNSCryptAbortsTheStop(t *testing.T) {
 	next, _ := m.Update(common.SubmitDnsMsg{ProviderID: common.DNSModeDNSCrypt})
 	if got := next.(NetpalaData); got.pendingStopUnit != "" {
 		t.Error("re-selecting DNSCrypt should abandon the stop, not queue it")
+	}
+}
+
+// The bug this fixes: netpala judged the dependency from the connection
+// profile, which reads "dhcp" when resolv.conf has been pointed at a local
+// resolver by something outside NetworkManager. Every lookup went through the
+// resolver while netpala believed nothing depended on it, so stopping it
+// skipped the replacement picker and simply broke DNS.
+func TestStopDetectsDependencyFromEffectiveDNS(t *testing.T) {
+	m := linkModel(true, []common.KnownNetwork{net("home", true, common.DNSModeDHCP)})
+	// Profile says DHCP, but the machine actually resolves through loopback.
+	m.EffectiveDNS = []string{"127.0.0.1"}
+	m.AppliedDNS = []string{"192.168.1.2", "192.168.1.1"}
+
+	svc, _ := m.dnsService()
+	if !m.stopWouldBreakDNS(svc) {
+		t.Error("resolution goes through the resolver; stopping it must be caught")
+	}
+}
+
+func TestOverrideDetection(t *testing.T) {
+	tests := []struct {
+		name      string
+		effective []string
+		applied   []string
+		want      bool
+	}{
+		{"NM is in charge", []string{"192.168.1.2"}, []string{"192.168.1.2"}, false},
+		{"overridden by a local resolver", []string{"127.0.0.1"}, []string{"192.168.1.2"}, true},
+		{"subset of what NM applied", []string{"192.168.1.2"}, []string{"192.168.1.2", "192.168.1.1"}, false},
+		{"nothing effective", nil, []string{"192.168.1.2"}, false},
+		{"nothing applied to compare against", []string{"127.0.0.1"}, nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := linkModel(true, nil)
+			m.EffectiveDNS, m.AppliedDNS = tt.effective, tt.applied
+			if got := m.dnsIsOverridden(); got != tt.want {
+				t.Errorf("dnsIsOverridden() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// When netpala cannot move DNS, the picker must say so rather than implying a
+// clean hand-off it cannot deliver.
+func TestNoticeIsHonestWhenDNSIsOverridden(t *testing.T) {
+	m := linkModel(true, []common.KnownNetwork{net("home", true, common.DNSModeDHCP)})
+	m.EffectiveDNS = []string{"127.0.0.1"}
+	m.AppliedDNS = []string{"192.168.1.2"}
+
+	svc, _ := m.dnsService()
+	m.openDnsPickerForStop(svc)
+
+	if !strings.Contains(m.DnsForm.Notice, "outside NetworkManager") {
+		t.Errorf("notice should admit netpala cannot move DNS, got: %q", m.DnsForm.Notice)
 	}
 }

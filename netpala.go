@@ -26,6 +26,11 @@ type NetpalaData struct {
 	KnownNetworks   []common.KnownNetwork
 	ScannedNetworks []common.ScannedNetwork
 
+	// What the machine actually resolves through, and what NetworkManager
+	// configured. They differ when something outside NM owns resolv.conf.
+	EffectiveDNS []string
+	AppliedDNS   []string
+
 	Tables    models.TablesModel
 	StatusBar models.StatusBarData
 
@@ -92,6 +97,12 @@ func loadInitialData(Conn *godbus.Conn, securityServices []common.SecurityServic
 			func() tea.Msg { return common.ScannedNetworksUpdateMsg(filteredScanned) },
 			func() tea.Msg { return common.VpnUpdateMsg(vpns) },
 			func() tea.Msg { return common.SecurityUpdateMsg(security) },
+			func() tea.Msg {
+				return common.DnsStateMsg{
+					Effective: common.SystemResolvers(),
+					Applied:   network.AppliedResolvers(Conn),
+				}
+			},
 		}
 	}
 }
@@ -232,8 +243,40 @@ func (m NetpalaData) stopWouldBreakDNS(svc common.SecurityService) bool {
 	if !svc.ProvidesDNS || !svc.Active {
 		return false
 	}
+	// The profile is only half the answer. resolv.conf can be pointed at a
+	// local resolver by something outside NetworkManager entirely, in which
+	// case the profile still reads "dhcp" while every lookup on the machine
+	// goes through this unit. Ask what is actually resolving.
+	if common.IsLoopbackDNS(m.EffectiveDNS) {
+		return true
+	}
 	current, ok := m.connectedNetwork()
 	return ok && current.DNSMode == common.DNSModeDNSCrypt
+}
+
+// dnsIsOverridden reports whether resolv.conf is being driven by something
+// other than NetworkManager, which means changing the connection profile will
+// not move DNS and netpala cannot clear the way before stopping a resolver.
+func (m NetpalaData) dnsIsOverridden() bool {
+	effective := m.EffectiveDNS
+	if len(effective) == 0 {
+		return false
+	}
+	applied := m.AppliedDNS
+	if len(applied) == 0 {
+		return false // nothing to compare against; assume NM is in charge
+	}
+
+	have := make(map[string]struct{}, len(applied))
+	for _, a := range applied {
+		have[a] = struct{}{}
+	}
+	for _, e := range effective {
+		if _, ok := have[e]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // openDnsPickerForStop asks where DNS should go before the resolver is taken
@@ -246,7 +289,17 @@ func (m *NetpalaData) openDnsPickerForStop(svc common.SecurityService) {
 
 	m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.DNS.DnscryptAddresses)
 	m.DnsForm.SSID = target.SSID
-	m.DnsForm.Notice = fmt.Sprintf("Switching %s off - pick DNS for %s first", svc.Name, target.SSID)
+
+	if m.dnsIsOverridden() {
+		// Changing the profile will not move resolv.conf, so promising a clean
+		// hand-off would be a lie. Say what netpala can and cannot do.
+		m.DnsForm.Notice = fmt.Sprintf(
+			"%s answers DNS, but resolv.conf is set outside NetworkManager - "+
+				"changing this profile will not move it. Stopping anyway will break lookups.",
+			svc.Name)
+	} else {
+		m.DnsForm.Notice = fmt.Sprintf("Switching %s off - pick DNS for %s first", svc.Name, target.SSID)
+	}
 	// Start on DHCP rather than the current DNSCrypt selection: the point of
 	// this popup is to move off it.
 	m.DnsForm.SelectProvider(common.DNSModeDHCP, nil)
@@ -566,6 +619,10 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.SecurityData = msg
 		m.clampSelection()
 
+	case common.DnsStateMsg:
+		m.EffectiveDNS = msg.Effective
+		m.AppliedDNS = msg.Applied
+
 	case common.KnownNetworksUpdateMsg:
 		m.FilterKnownFromScanned()
 		m.KnownNetworks = msg
@@ -641,6 +698,12 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			func() tea.Msg {
 				return common.SecurityUpdateMsg(
 					network.GetSecurityServices(m.Conn, m.Config.Security.Services))
+			},
+			func() tea.Msg {
+				return common.DnsStateMsg{
+					Effective: common.SystemResolvers(),
+					Applied:   network.AppliedResolvers(m.Conn),
+				}
 			},
 			dbus.RefreshTicker(),
 		)

@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 	"net"
+	"os"
 	"strings"
 )
 
@@ -97,6 +98,39 @@ func DNSProvidersFor(dnscryptAddrs []string) []DNSProvider {
 		}
 	}
 	return out
+}
+
+// ResolvConfPath is where the system's effective resolvers are published.
+const ResolvConfPath = "/etc/resolv.conf"
+
+// resolvConfForTest lets tests point the reader at a fixture.
+var resolvConfForTest = ResolvConfPath
+
+// SystemResolvers reports the nameservers the machine will actually use.
+//
+// This is not necessarily what the connection profile asked for. resolv.conf
+// is assembled by resolvconf (or systemd-resolved, or whatever else writes it)
+// from several registered sources, and NetworkManager is only one of them --
+// a distro-level setting can outrank it entirely.
+func SystemResolvers() []string {
+	data, err := os.ReadFile(resolvConfForTest)
+	if err != nil {
+		return nil
+	}
+	var servers []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "nameserver" {
+			if net.ParseIP(fields[1]) != nil {
+				servers = append(servers, fields[1])
+			}
+		}
+	}
+	return servers
 }
 
 // IsLoopbackDNS reports whether every server is a loopback address, which is
