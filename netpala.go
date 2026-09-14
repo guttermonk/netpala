@@ -450,6 +450,16 @@ func (m NetpalaData) Init() tea.Cmd {
 func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// Data refreshes describe the world, not the popup, so they are applied
+	// whether or not one is open. Leaving them to the popup dispatch meant
+	// every popup's default branch forwarded them into a form that ignores
+	// them - the table went stale, and because the KnownNetworksUpdateMsg
+	// handler is what re-arms the D-Bus signal listener, swallowing one also
+	// killed automatic refreshes until netpala was restarted.
+	if next, dataCmd, handled := m.handleDataMsg(msg); handled {
+		return next, dataCmd
+	}
+
 	switch m.PopupState {
 	case 0:
 		// Handle the EAP form popup state
@@ -631,70 +641,6 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
-	case common.DeviceUpdateMsg:
-		m.DeviceData = msg
-		return m, dbus.WaitForDBusSignal(m.Conn, m.DBusSignals)
-
-	case common.VpnUpdateMsg:
-		m.VpnData = msg
-		m.clampSelection()
-
-	case common.SecurityUpdateMsg:
-		m.SecurityData = msg
-		m.clampSelection()
-
-	case common.DnsStateMsg:
-		m.EffectiveDNS = msg.Effective
-		m.AppliedDNS = msg.Applied
-
-	case common.KnownNetworksUpdateMsg:
-		m.FilterKnownFromScanned()
-		m.KnownNetworks = msg
-		m.clampSelection()
-
-		cmds := []tea.Cmd{dbus.WaitForDBusSignal(m.Conn, m.DBusSignals)}
-		if onConnect := m.onConnectionChanged(); onConnect != nil {
-			cmds = append(cmds, onConnect)
-		}
-		return m, tea.Batch(cmds...)
-
-	case common.ScannedNetworksUpdateMsg:
-		// The `nil` message is the trigger from the listener.
-		if msg == nil {
-			debounceCmd := tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
-				return common.PerformScanRefreshMsg{}
-			})
-			// Re-arm the main listener right away, but start the debounce timer.
-			return m, tea.Batch(dbus.WaitForDBusSignal(m.Conn, m.DBusSignals), debounceCmd)
-		}
-		// This is the actual data from a completed scan.
-		m.ScannedNetworks = msg
-		m.FilterKnownFromScanned()
-
-		// No need to re-arm listener here, as it's handled by the debounce logic.
-		return m, nil
-
-	case common.PerformScanRefreshMsg:
-		// The debounce timer fired, now perform the scan.
-		return m, dbus.GetScanResults(m.Conn)
-
-	case common.ErrMsg:
-		// 1. Generate the command. This command produces the internal 'alertMsg'
-		//    that the AlertModel is waiting for.
-		alertCmd := m.Alert.NewAlertCmd(bubbleup.ErrorKey, "Error: "+msg.Err.Error())
-
-		// 2. Update the main model's error state.
-		m.Err = msg.Err
-
-		// 3. Return the command.
-		// NOTE: Do NOT call m.Alert.Update(msg) here.
-		return m, alertCmd
-
-	case common.RefreshKnownNetworksMsg:
-		return m, func() tea.Msg {
-			return common.KnownNetworksUpdateMsg(network.GetKnownNetworks(m.Conn))
-		}
-
 	case tea.WindowSizeMsg:
 		var cmds []tea.Cmd
 
@@ -970,4 +916,81 @@ func updateOverlayModel(m NetpalaData, popup tea.Model) overlay.Model {
 
 	newOverlay.Update(tea.WindowSizeMsg{Width: m.Width, Height: m.Height})
 	return newOverlay
+}
+
+// handleDataMsg applies the messages that describe system state rather than
+// user input: device, network, VPN, security and DNS refreshes, plus the
+// timers that drive them and any error worth surfacing.
+//
+// These must land whether or not a popup is open, so Update dispatches them
+// before the popup switch. handled is false for anything else, leaving key
+// presses and window resizes to the popup and the main switch.
+func (m NetpalaData) handleDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case common.DeviceUpdateMsg:
+		m.DeviceData = msg
+		return m, dbus.WaitForDBusSignal(m.Conn, m.DBusSignals), true
+
+	case common.VpnUpdateMsg:
+		m.VpnData = msg
+		m.clampSelection()
+
+	case common.SecurityUpdateMsg:
+		m.SecurityData = msg
+		m.clampSelection()
+
+	case common.DnsStateMsg:
+		m.EffectiveDNS = msg.Effective
+		m.AppliedDNS = msg.Applied
+
+	case common.KnownNetworksUpdateMsg:
+		m.FilterKnownFromScanned()
+		m.KnownNetworks = msg
+		m.clampSelection()
+
+		cmds := []tea.Cmd{dbus.WaitForDBusSignal(m.Conn, m.DBusSignals)}
+		if onConnect := m.onConnectionChanged(); onConnect != nil {
+			cmds = append(cmds, onConnect)
+		}
+		return m, tea.Batch(cmds...), true
+
+	case common.ScannedNetworksUpdateMsg:
+		// The `nil` message is the trigger from the listener.
+		if msg == nil {
+			debounceCmd := tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+				return common.PerformScanRefreshMsg{}
+			})
+			// Re-arm the main listener right away, but start the debounce timer.
+			return m, tea.Batch(dbus.WaitForDBusSignal(m.Conn, m.DBusSignals), debounceCmd), true
+		}
+		// This is the actual data from a completed scan.
+		m.ScannedNetworks = msg
+		m.FilterKnownFromScanned()
+
+		// No need to re-arm listener here, as it's handled by the debounce logic.
+		return m, nil, true
+
+	case common.PerformScanRefreshMsg:
+		// The debounce timer fired, now perform the scan.
+		return m, dbus.GetScanResults(m.Conn), true
+
+	case common.ErrMsg:
+		// 1. Generate the command. This command produces the internal 'alertMsg'
+		//    that the AlertModel is waiting for.
+		alertCmd := m.Alert.NewAlertCmd(bubbleup.ErrorKey, "Error: "+msg.Err.Error())
+
+		// 2. Update the main model's error state.
+		m.Err = msg.Err
+
+		// 3. Return the command.
+		// NOTE: Do NOT call m.Alert.Update(msg) here.
+		return m, alertCmd, true
+
+	case common.RefreshKnownNetworksMsg:
+		return m, func() tea.Msg {
+			return common.KnownNetworksUpdateMsg(network.GetKnownNetworks(m.Conn))
+		}, true
+
+	}
+	return m, nil, false
 }

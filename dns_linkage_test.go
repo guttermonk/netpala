@@ -3,6 +3,7 @@ package main
 import (
 	"netpala/common"
 	"netpala/config"
+	"netpala/models"
 	"strings"
 	"testing"
 
@@ -373,5 +374,60 @@ func TestStopIsDirectWhenResolverIsNotInTheQueryPath(t *testing.T) {
 					got, tt.wantPopup, tt.effective)
 			}
 		})
+	}
+}
+
+// Data refreshes describe the world, not the popup. Every popup's default
+// branch used to forward them into a form that ignores them, so the tables
+// went stale while one was open -- and since the KnownNetworksUpdateMsg
+// handler is what re-arms the D-Bus signal listener, swallowing one also
+// stopped automatic refreshes for the rest of the session.
+func TestDataRefreshesApplyWithAPopupOpen(t *testing.T) {
+	fresh := []common.KnownNetwork{net("home", true, common.DNSModeCloudflare)}
+
+	for _, popup := range []struct {
+		name  string
+		state int
+	}{
+		{"no popup", -1},
+		{"eap form", 0},
+		{"confirmation", 1},
+		{"password", 2},
+		{"dns picker", 3},
+	} {
+		t.Run(popup.name, func(t *testing.T) {
+			m := linkModel(false, []common.KnownNetwork{net("home", true, common.DNSModeDHCP)})
+			m.PopupState = popup.state
+
+			next, _ := m.Update(common.KnownNetworksUpdateMsg(fresh))
+			got := next.(NetpalaData)
+
+			if len(got.KnownNetworks) != 1 || got.KnownNetworks[0].DNSMode != common.DNSModeCloudflare {
+				t.Errorf("refresh dropped with popup state %d: %+v", popup.state, got.KnownNetworks)
+			}
+			// The popup must stay open; a data refresh is not user input.
+			if got.PopupState != popup.state {
+				t.Errorf("PopupState changed from %d to %d", popup.state, got.PopupState)
+			}
+		})
+	}
+}
+
+// Key presses still belong to the popup, not the tables.
+func TestKeyPressesStillGoToTheOpenPopup(t *testing.T) {
+	m := linkModel(false, []common.KnownNetwork{net("home", true, common.DNSModeDHCP)})
+	m.PopupState = 3
+	m.DnsForm = models.ModelDnsSelect(m.Colors, nil)
+	m.DnsForm.SelectProvider(common.DNSModeDHCP, nil)
+
+	before := m.DnsForm.Cursor
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	got := next.(NetpalaData)
+
+	if got.DnsForm.Cursor == before {
+		t.Error("down arrow should have moved the picker cursor, not the table")
+	}
+	if got.PopupState != 3 {
+		t.Error("popup should still be open")
 	}
 }
