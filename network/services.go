@@ -71,3 +71,56 @@ func GetSecurityServices(conn *dbus.Conn, configured []common.SecurityServiceCon
 	}
 	return out
 }
+
+// AppliedResolvers reports the nameservers NetworkManager has actually applied
+// for the active connections.
+//
+// Comparing these against /etc/resolv.conf is how netpala tells "NM is driving
+// DNS" apart from "something outside NM overrode it". The profile alone cannot
+// answer that: a profile on DHCP looks identical whether the router's servers
+// are in use or a distro-level setting replaced them.
+func AppliedResolvers(conn *dbus.Conn) []string {
+	if conn == nil {
+		return nil
+	}
+	nm := conn.Object(NMDest, dbus.ObjectPath(NMPath))
+
+	var devs []dbus.ObjectPath
+	if nm.Call(NMDest+".GetDevices", 0).Store(&devs) != nil {
+		return nil
+	}
+
+	var out []string
+	for _, d := range devs {
+		obj := conn.Object(NMDest, d)
+
+		ip4Var, err := obj.GetProperty(DevIF + ".Ip4Config")
+		if err != nil {
+			continue
+		}
+		ip4, ok := ip4Var.Value().(dbus.ObjectPath)
+		if !ok || ip4 == "/" || ip4 == "" {
+			continue
+		}
+
+		// NameserverData is the modern form; it carries the address as a
+		// string so there is no byte-order guesswork.
+		nsVar, err := conn.Object(NMDest, ip4).
+			GetProperty("org.freedesktop.NetworkManager.IP4Config.NameserverData")
+		if err != nil {
+			continue
+		}
+		entries, ok := nsVar.Value().([]map[string]dbus.Variant)
+		if !ok {
+			continue
+		}
+		for _, e := range entries {
+			if addr, ok := e["address"]; ok {
+				if s, ok := addr.Value().(string); ok && s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+	}
+	return out
+}

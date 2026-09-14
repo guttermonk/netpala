@@ -135,3 +135,11 @@ type VpnConnection struct {
 	ConnType   string
 	Connected  bool
 }
+
+// DnsStateMsg carries what the system is actually resolving through, so the
+// UI can compare it against what NetworkManager applied. Read on refresh
+// rather than inside key handlers: it touches the filesystem and D-Bus.
+type DnsStateMsg struct {
+	Effective []string // /etc/resolv.conf
+	Applied   []string // what NetworkManager configured
+}
