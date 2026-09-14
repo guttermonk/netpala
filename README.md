@@ -32,26 +32,17 @@ Pre-built binaries coming soon.
 
 ### Install from AUR
 
-```bash
-# Using yay
-yay -S netpala
-
-# Or using paru
-paru -S netpala
-```
-
-You'll need:
-
-Go 1.25.4+ (only for building AUR package locally)
-- NetworkManager running
-- dbus available
+> **This fork is not packaged in the AUR.** The `netpala` AUR package tracks
+> [joel-sgc/netpala](https://github.com/joel-sgc/netpala), the upstream project
+> this was forked from, and does not include the changes here. Install from
+> source or with Nix instead.
 
 ---
 
 ### Install from Source (Go)
 
 ```bash
-git clone https://github.com/joel-sgc/netpala.git
+git clone https://github.com/guttermonk/netpala.git
 cd netpala
 go build
 ./netpala
@@ -70,29 +61,55 @@ You'll need:
 #### Run directly without installing
 
 ```bash
-nix run github:joel-sgc/netpala
+nix run github:guttermonk/netpala
 ```
 
 #### Install to profile
 
 ```bash
-nix profile install github:joel-sgc/netpala
+nix profile install github:guttermonk/netpala
 ```
 
 #### Add to NixOS configuration
 
-Add to your `flake.nix` inputs:
+**1. Add the flake as an input.** In your `flake.nix`:
 
 ```nix
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    netpala.url = "github:joel-sgc/netpala";
+    netpala.url = "github:guttermonk/netpala";
+    # Optional: build netpala against your own nixpkgs rather than its pinned one
+    netpala.inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  outputs = { nixpkgs, netpala, ... }@inputs: {
+    nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      # Pass inputs through so configuration.nix can reach them
+      specialArgs = { inherit inputs; };
+      modules = [ ./configuration.nix ];
+    };
   };
 }
 ```
 
-Then either add to `environment.systemPackages`:
+**2. Import the module in `configuration.nix`:**
+
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.netpala.nixosModules.default ];
+
+  programs.netpala.enable = true;
+}
+```
+
+That installs netpala system-wide and ensures dbus is enabled. The module also
+takes `programs.netpala.package` if you want to override the build.
+
+If you would rather not use the module, add the package directly — you are then
+responsible for NetworkManager and dbus yourself:
 
 ```nix
 { inputs, pkgs, ... }:
@@ -101,20 +118,44 @@ Then either add to `environment.systemPackages`:
 }
 ```
 
-Or use the provided NixOS module:
+**3. Rebuild:**
+
+```bash
+sudo nixos-rebuild switch --flake .#myhost
+```
+
+#### Optional: transparent Tor proxying
+
+The Security pane can toggle a transparent Tor proxy, but netpala does not ship
+the firewall rules — they live in
+[`contrib/tor-transparent/`](contrib/tor-transparent/) so you can review them
+before trusting them. Copy that directory next to your `configuration.nix` and:
 
 ```nix
-{ inputs, ... }:
 {
-  imports = [ inputs.netpala.nixosModules.default ];
-  programs.netpala.enable = true;
+  imports = [ ./tor-transparent/tor-transparent.nix ];
+
+  services.torTransparent = {
+    enable = true;
+    # Units netpala may start and stop without a password prompt. Keep in step
+    # with the [[security.services]] entries in your netpala config.toml.
+    allowedUnits = [
+      "tor-transparent.service"
+      "dnscrypt-proxy2.service"
+    ];
+  };
 }
 ```
+
+Enabling the module installs the rules **dormant** — it does not route anything
+through Tor until the unit is started, from the Security pane or with
+`systemctl start tor-transparent`. See that directory's files for what the
+ruleset does and its limitations.
 
 #### Development shell
 
 ```bash
-git clone https://github.com/joel-sgc/netpala.git
+git clone https://github.com/guttermonk/netpala.git
 cd netpala
 nix develop
 ```
@@ -214,7 +255,7 @@ transparent Tor proxy, a local DNSCrypt daemon.
 ┌ Security ────────────────────────────────────────────────────────────────────┐
 │         Service                       Unit                        State      │
 │                                                                              │
-│  >        Tor                tor-transparent.service              exited     │
+│  >        Tor                tor-transparent.service              active     │
 │  >      DNSCrypt             dnscrypt-proxy2.service             running     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
