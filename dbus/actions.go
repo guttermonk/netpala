@@ -304,6 +304,76 @@ func cleanSettingsForUpdate(settings map[string]map[string]dbus.Variant) {
 	}
 }
 
+// applyDNSToSettings writes the chosen provider into a connection's settings.
+//
+// Kept separate from the D-Bus round trip so these rules can be tested
+// directly. The bug that made "DHCP" appear to do nothing lived here, and was
+// invisible to every test that only checked which commands were returned.
+func applyDNSToSettings(settings map[string]map[string]dbus.Variant, provider common.DNSProvider, v4, v6 []string) error {
+	// A profile without an IP section defaults to auto.
+	for _, section := range []string{"ipv4", "ipv6"} {
+		if settings[section] == nil {
+			settings[section] = map[string]dbus.Variant{
+				"method": dbus.MakeVariant("auto"),
+			}
+		}
+	}
+
+	// DHCP means "no explicit servers": an empty list, plus ignore-auto-dns
+	// turned back off so the router's servers are used again.
+	if provider.ID == common.DNSModeDHCP {
+		settings["ipv4"]["dns"] = emptyV4DNS()
+		settings["ipv6"]["dns"] = emptyV6DNS()
+		for _, section := range []string{"ipv4", "ipv6"} {
+			settings[section]["ignore-auto-dns"] = dbus.MakeVariant(false)
+		}
+		return nil
+	}
+
+	if len(v4) == 0 && len(v6) == 0 {
+		return fmt.Errorf("no DNS servers to apply for %s", provider.Label)
+	}
+
+	if len(v4) > 0 && ipMethodAcceptsDNS(settings["ipv4"]) {
+		variant, err := network.DNSv4Variant(v4)
+		if err != nil {
+			return err
+		}
+		settings["ipv4"]["dns"] = variant
+		settings["ipv4"]["ignore-auto-dns"] = dbus.MakeVariant(true)
+	}
+
+	if len(v6) > 0 && ipMethodAcceptsDNS(settings["ipv6"]) {
+		variant, err := network.DNSv6Variant(v6)
+		if err != nil {
+			return err
+		}
+		settings["ipv6"]["dns"] = variant
+	} else {
+		// Drop stale servers from a previous selection rather than mixing
+		// them with the new provider.
+		settings["ipv6"]["dns"] = emptyV6DNS()
+	}
+
+	// Suppress the router's IPv6 resolvers either way. A v4-only provider
+	// (DNSCrypt on 127.0.0.1, a v4-only custom list) would otherwise leave
+	// DHCPv6/RA servers in resolv.conf, and queries landing on those bypass
+	// the chosen provider entirely.
+	settings["ipv6"]["ignore-auto-dns"] = dbus.MakeVariant(true)
+	return nil
+}
+
+// emptyV4DNS and emptyV6DNS clear a section's nameservers.
+//
+// Removing the key from the settings map is not enough: NetworkManager keeps
+// the stored value for a property the update does not mention, so deleting
+// "dns" left the old servers in place. Switching a network back to DHCP looked
+// like it did nothing, because ignore-auto-dns went back to false while the
+// explicit servers survived. The property has to be set to an empty list of
+// the right D-Bus type.
+func emptyV4DNS() dbus.Variant { return dbus.MakeVariant([]uint32{}) }
+func emptyV6DNS() dbus.Variant { return dbus.MakeVariant([][]byte{}) }
+
 // ipMethodAcceptsDNS reports whether an ipv4/ipv6 section's method allows
 // nameservers. NetworkManager rejects an Update that sets "dns" on a disabled
 // or link-local stack, which is common for ipv6 on locked-down profiles.
@@ -351,62 +421,18 @@ func SetDnsCmd(
 		// 2. Remove fields with incompatible types
 		cleanSettingsForUpdate(settings)
 
-		// 3. Ensure the IP sections exist; a profile without one defaults to auto.
-		for _, section := range []string{"ipv4", "ipv6"} {
-			if settings[section] == nil {
-				settings[section] = map[string]dbus.Variant{
-					"method": dbus.MakeVariant("auto"),
-				}
-			}
+		// 3. Apply the provider to the settings map.
+		if err := applyDNSToSettings(settings, provider, v4, v6); err != nil {
+			return common.ErrMsg{Err: err}
 		}
 
-		// 4. Apply the provider. DHCP means "no explicit servers", which is the
-		//    absence of the key plus ignore-auto-dns turned back off.
-		if provider.ID == common.DNSModeDHCP {
-			for _, section := range []string{"ipv4", "ipv6"} {
-				delete(settings[section], "dns")
-				settings[section]["ignore-auto-dns"] = dbus.MakeVariant(false)
-			}
-		} else {
-			if len(v4) == 0 && len(v6) == 0 {
-				return common.ErrMsg{Err: fmt.Errorf("no DNS servers to apply for %s", provider.Label)}
-			}
-
-			if len(v4) > 0 && ipMethodAcceptsDNS(settings["ipv4"]) {
-				variant, err := network.DNSv4Variant(v4)
-				if err != nil {
-					return common.ErrMsg{Err: err}
-				}
-				settings["ipv4"]["dns"] = variant
-				settings["ipv4"]["ignore-auto-dns"] = dbus.MakeVariant(true)
-			}
-
-			if len(v6) > 0 && ipMethodAcceptsDNS(settings["ipv6"]) {
-				variant, err := network.DNSv6Variant(v6)
-				if err != nil {
-					return common.ErrMsg{Err: err}
-				}
-				settings["ipv6"]["dns"] = variant
-			} else {
-				// Drop stale servers from a previous selection rather than
-				// mixing them with the new provider.
-				delete(settings["ipv6"], "dns")
-			}
-
-			// Suppress the router's IPv6 resolvers either way. A v4-only
-			// provider (DNSCrypt on 127.0.0.1, a v4-only custom list) would
-			// otherwise leave DHCPv6/RA servers in resolv.conf, and queries
-			// landing on those bypass the chosen provider entirely.
-			settings["ipv6"]["ignore-auto-dns"] = dbus.MakeVariant(true)
-		}
-
-		// 5. Update the connection
+		// 4. Update the connection
 		call = connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.Update", 0, settings)
 		if call.Err != nil {
 			return common.ErrMsg{Err: fmt.Errorf("failed to update DNS settings: %w", call.Err)}
 		}
 
-		// 6. Re-activate so resolv.conf is rewritten immediately.
+		// 5. Re-activate so resolv.conf is rewritten immediately.
 		var cmds []tea.Cmd
 		if reactivate && devicePath != "" && devicePath != "/" {
 			cmds = append(cmds, ConnectToNetworkCmd(conn, connectionPath, devicePath))
@@ -446,7 +472,7 @@ func ToggleAutoConnectCmd(conn *dbus.Conn, connectionPath dbus.ObjectPath, curre
 		// 4. Toggle autoconnect
 		settings["connection"]["autoconnect"] = dbus.MakeVariant(!currentValue)
 
-		// 5. Update the connection
+		// 4. Update the connection
 		call = connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.Update", 0, settings)
 		if call.Err != nil {
 			return common.ErrMsg{Err: fmt.Errorf("failed to update connection: %w", call.Err)}
