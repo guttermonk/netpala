@@ -934,14 +934,17 @@ func (m NetpalaData) handleDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
 	case common.VpnUpdateMsg:
 		m.VpnData = msg
 		m.clampSelection()
+		return m, nil, true
 
 	case common.SecurityUpdateMsg:
 		m.SecurityData = msg
 		m.clampSelection()
+		return m, nil, true
 
 	case common.DnsStateMsg:
 		m.EffectiveDNS = msg.Effective
 		m.AppliedDNS = msg.Applied
+		return m, nil, true
 
 	case common.KnownNetworksUpdateMsg:
 		m.FilterKnownFromScanned()

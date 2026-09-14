@@ -431,3 +431,68 @@ func TestKeyPressesStillGoToTheOpenPopup(t *testing.T) {
 		t.Error("popup should still be open")
 	}
 }
+
+// Every data message must be applied, not just the one that happened to be
+// tested. Three of them silently lost their updates because handleDataMsg
+// returned handled=false for them, so Update discarded the modified model --
+// which is how the Security pane vanished.
+func TestEveryDataMessageIsApplied(t *testing.T) {
+	base := func() NetpalaData {
+		m := linkModel(false, nil)
+		m.VpnData = nil
+		m.SecurityData = nil
+		m.EffectiveDNS = nil
+		m.AppliedDNS = nil
+		m.KnownNetworks = nil
+		m.DeviceData = nil
+		return m
+	}
+
+	t.Run("vpn", func(t *testing.T) {
+		next, _ := base().Update(common.VpnUpdateMsg{{Name: "wg0"}})
+		if got := next.(NetpalaData).VpnData; len(got) != 1 {
+			t.Errorf("VpnData = %v; the VPN pane would stay hidden", got)
+		}
+	})
+
+	t.Run("security", func(t *testing.T) {
+		next, _ := base().Update(common.SecurityUpdateMsg{{Name: "Tor", Unit: "tor-transparent.service"}})
+		if got := next.(NetpalaData).SecurityData; len(got) != 1 {
+			t.Errorf("SecurityData = %v; the Security pane would stay hidden", got)
+		}
+	})
+
+	t.Run("dns state", func(t *testing.T) {
+		next, _ := base().Update(common.DnsStateMsg{
+			Effective: []string{"127.0.0.1"},
+			Applied:   []string{"192.168.1.1"},
+		})
+		got := next.(NetpalaData)
+		if len(got.EffectiveDNS) != 1 || len(got.AppliedDNS) != 1 {
+			t.Errorf("EffectiveDNS=%v AppliedDNS=%v; override detection would misfire",
+				got.EffectiveDNS, got.AppliedDNS)
+		}
+	})
+
+	t.Run("known networks", func(t *testing.T) {
+		next, _ := base().Update(common.KnownNetworksUpdateMsg{net("home", true, common.DNSModeGoogle)})
+		got := next.(NetpalaData).KnownNetworks
+		if len(got) != 1 || got[0].DNSMode != common.DNSModeGoogle {
+			t.Errorf("KnownNetworks = %+v; the DNS column would stay stale", got)
+		}
+	})
+
+	t.Run("devices", func(t *testing.T) {
+		next, _ := base().Update(common.DeviceUpdateMsg{{Name: "wlp3s0"}})
+		if got := next.(NetpalaData).DeviceData; len(got) != 1 {
+			t.Errorf("DeviceData = %v", got)
+		}
+	})
+
+	t.Run("scanned networks", func(t *testing.T) {
+		next, _ := base().Update(common.ScannedNetworksUpdateMsg{{SSID: "cafe"}})
+		if got := next.(NetpalaData).ScannedNetworks; len(got) != 1 {
+			t.Errorf("ScannedNetworks = %v", got)
+		}
+	})
+}
