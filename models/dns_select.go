@@ -27,7 +27,10 @@ type DnsSelect struct {
 	Providers []common.DNSProvider
 	Custom    textinput.Model
 	ErrText   string
-	Colors    config.Colors
+	// Current is the provider the profile is set to, marked with ">". Distinct
+	// from Cursor, which is only where the highlight sits.
+	Current string
+	Colors  config.Colors
 
 	// Notice explains why the picker opened when netpala opened it rather
 	// than the user. Without it a popup appearing on its own is a mystery.
@@ -53,9 +56,16 @@ func ModelDnsSelect(colors config.Colors, dnscryptAddrs []string) DnsSelect {
 	}
 }
 
-// SelectProvider positions the cursor on the profile's current provider and
-// pre-fills the custom field when that's what it's using.
+// SelectProvider records which provider the profile is currently using and
+// positions the cursor on it, pre-filling the custom field when that's what
+// it's using.
+//
+// Current is kept separate from Cursor because they are different things: the
+// cursor is where you are looking, Current is what the network is actually
+// set to. Moving the cursor must not make it look as though the setting
+// changed before you have chosen anything.
 func (m *DnsSelect) SelectProvider(mode string, servers []string) {
+	m.Current = mode
 	for i, p := range m.Providers {
 		if p.ID == mode {
 			m.Cursor = i
@@ -240,10 +250,15 @@ func (m DnsSelect) View() string {
 			"")
 	}
 	for i, p := range m.Providers {
+		// ">" marks what the network is set to, matching the Known Networks
+		// and Security tables. The cursor is the highlight bar, as it is in
+		// those tables too.
 		marker := "  "
+		if p.ID == m.Current {
+			marker = "> "
+		}
 		style := normalStyle
 		if i == m.Cursor {
-			marker = "> "
 			style = selectedStyle
 		}
 
