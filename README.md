@@ -225,22 +225,40 @@ refresh rather than remembered, so a change made with `systemctl` shows up
 correctly — netpala reports what is true, not what it last asked for.
 
 Toggling needs a polkit rule permitting
-`org.freedesktop.systemd1.manage-units` for that specific unit. Without one you
-get an error naming the missing rule instead of a silent failure.
+`org.freedesktop.systemd1.manage-units` for each unit you want to control —
+see `allowedUnits` in [`contrib/tor-transparent/`](contrib/tor-transparent/).
+Without one you get an error naming the missing rule instead of a silent
+failure.
 
-`provides_dns = true` marks a unit that answers DNS on loopback. Stopping one
-while a saved network resolves through it would take out name resolution, so
-netpala names the affected networks and requires a second select press:
+#### DNS and the local resolver are kept in step
+
+`provides_dns = true` marks a unit that answers DNS on loopback. That unit and
+the **DNSCrypt** option in the DNS picker are two halves of one thing, so
+netpala keeps them consistent for the live connection:
+
+| You do | netpala does |
+| --- | --- |
+| Switch the resolver **on** here | Points the live connection's DNS at it |
+| Pick DNSCrypt for the **active** network | Starts the resolver, then applies the DNS |
+| Pick DNSCrypt for an **inactive** network | Saves the setting only — the resolver follows when that network is activated |
+| Switch the resolver **off** here | Opens the DNS picker to choose a replacement first |
+
+Ordering matters and is sequenced, never run in parallel: the resolver is
+listening *before* `resolv.conf` points at it, and a replacement is applied
+*before* the resolver goes away. That leaves no window where name resolution
+is pointed at something that isn't there.
+
+Switching the resolver off while the live connection uses it opens the picker
+rather than warning you:
 
 ```
-DNSCrypt resolves DNS for home (connected), cafe - stopping it breaks
-name resolution. Press select again to stop anyway.
+Switching DNSCrypt off - pick DNS for home-wifi first
 ```
 
-The currently connected network is named first and flagged, since that is the
-one that breaks immediately. The confirmation is tied to the row it was given
-for and is cleared by any navigation or refresh. Starting a unit never prompts —
-only stopping can take something down.
+Cancelling abandons the stop and leaves the resolver up. Choosing DNSCrypt in
+that popup reads as "actually, keep it" and also abandons the stop. Saved
+networks that aren't connected need no warning at all — their resolver is
+started again when you connect to them.
 
 `state_file` records the choice so a boot-time unit can replay it. This is
 necessary because NixOS cannot use `systemctl enable` — `/etc/systemd/system`

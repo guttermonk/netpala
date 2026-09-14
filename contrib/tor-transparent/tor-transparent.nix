@@ -72,7 +72,25 @@ in
     allowedGroup = lib.mkOption {
       type = lib.types.str;
       default = "wheel";
-      description = "Group permitted to toggle the unit without a password prompt.";
+      description = "Group permitted to toggle the units without a password prompt.";
+    };
+
+    allowedUnits = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        "tor-transparent.service"
+        "dnscrypt-proxy2.service"
+      ];
+      description = ''
+        Units that {option}`services.torTransparent.allowedGroup` may start and
+        stop without authenticating. This is the entire privilege surface
+        netpala gains, so it is an explicit list rather than a wildcard -- it
+        must not quietly become "manage any service".
+
+        Keep it in step with the `[[security.services]]` entries in
+        `~/.config/netpala/config.toml`: a unit listed there but missing here
+        gets a polkit refusal instead of a toggle.
+      '';
     };
   };
 
@@ -137,13 +155,15 @@ in
       '';
     };
 
-    # Scoped to exactly one unit and one group. This is the entire privilege
-    # surface netpala gains -- it cannot manage any other service.
+    # Scoped to a fixed list of units and one group. This is the entire
+    # privilege surface netpala gains -- it cannot manage anything else.
+    # A list rather than a wildcard, deliberately.
     security.polkit.enable = true;
     security.polkit.extraConfig = ''
       polkit.addRule(function(action, subject) {
+        var allowed = ${builtins.toJSON cfg.allowedUnits};
         if (action.id == "org.freedesktop.systemd1.manage-units" &&
-            action.lookup("unit") == "tor-transparent.service" &&
+            allowed.indexOf(action.lookup("unit")) !== -1 &&
             subject.isInGroup("${cfg.allowedGroup}")) {
           return polkit.Result.YES;
         }
