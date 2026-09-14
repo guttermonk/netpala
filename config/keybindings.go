@@ -481,6 +481,31 @@ func (k AppKeyMap) ShortHelp() []key.Binding {
 	}
 }
 
+// PaneHelp returns the bindings that actually do something in the given pane.
+//
+// Advertising remove, auto-connect, hidden and DNS while the cursor is on the
+// VPN list is just noise - those only act on known networks. Trimming the list
+// also keeps the bar on one line, which the layout depends on: it budgets
+// exactly one row for the status bar, so a wrapped bar pushes the tables off
+// the bottom of the screen.
+func (k AppKeyMap) PaneHelp(pane int) []key.Binding {
+	switch pane {
+	case common.PaneKnown:
+		return []key.Binding{
+			k.Up, k.Down, k.Select, k.Remove, k.Scan,
+			k.ToggleAutoConnect, k.ToggleHidden, k.SetDns,
+			k.NextPane, k.PrevPane, k.Quit,
+		}
+	case common.PaneScanned:
+		return []key.Binding{k.Up, k.Down, k.Select, k.Scan, k.NextPane, k.PrevPane, k.Quit}
+	case common.PaneVPN, common.PaneSecurity:
+		return []key.Binding{k.Up, k.Down, k.Select, k.NextPane, k.PrevPane, k.Quit}
+	case common.PaneDevice:
+		return []key.Binding{k.Select, k.Scan, k.NextPane, k.PrevPane, k.Quit}
+	}
+	return k.ShortHelp()
+}
+
 // FullHelp returns the full set of key bindings
 func (k AppKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

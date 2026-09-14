@@ -6,14 +6,16 @@ import (
 	"netpala/config"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 type StatusBarData struct {
-	Err    error
+	Err error
+	// Pane is the section the cursor is in, so the bar can advertise only
+	// the keys that will do something there.
+	Pane   int
 	KeyMap config.AppKeyMap
 	Colors config.Colors
 }
@@ -48,38 +50,70 @@ func (m StatusBarData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// I don't understand why these numbers work, I just know that they do. Periodt.
 func (m StatusBarData) View() string {
 	style := lipgloss.NewStyle().Foreground(lipgloss.Color(m.Colors.HelpText))
-
-	keyHelp := help.New()
-	keyHelp.Styles.ShortDesc = style
-	keyHelp.Styles.ShortKey = style
-
-	return renderShortHelp("|", style, style, m.KeyMap)
+	return renderShortHelp("|", style, style, m.KeyMap.PaneHelp(m.Pane))
 }
 
-func renderShortHelp(sep string, keyStyle lipgloss.Style, descStyle lipgloss.Style, keyMap config.AppKeyMap) string {
-	keybinds := keyMap.ShortHelp()
-	helpObj := help.New()
-	helpObj.ShortSeparator = ""
-	allKeybindsWidth := lipgloss.Width(helpObj.ShortHelpView(keybinds))
-
+// renderShortHelp lays the key hints out on exactly one line.
+//
+// Spacing is generous when the terminal has room and collapses when it does
+// not. The MaxHeight is the backstop rather than decoration: the layout
+// budgets a single row for the status bar, so a bar that wrapped would push
+// the bottom of the device table off the screen.
+func renderShortHelp(sep string, keyStyle lipgloss.Style, descStyle lipgloss.Style, keybinds []key.Binding) string {
 	totalWidth := common.WindowDimensions().Width
-	totalPaddingWidth := max(totalWidth-allKeybindsWidth, 0)
-	columnWidth := totalPaddingWidth / (len(keybinds) * 3)
 
-	finalStr := make([]string, len(keybinds))
-
-	for i, k := range keybinds {
-		finalStr[i] += strings.Repeat(" ", columnWidth)
-		bind := keyStyle.Render(k.Help().Key)
-		desc := descStyle.Bold(true).Render(k.Help().Desc)
-		finalStr[i] += fmt.Sprintf("%s %s", bind, desc)
-		finalStr[i] += strings.Repeat(" ", columnWidth)
+	entries := make([]string, 0, len(keybinds))
+	for _, k := range keybinds {
+		entries = append(entries, fmt.Sprintf("%s %s",
+			keyStyle.Render(k.Help().Key),
+			descStyle.Bold(true).Render(k.Help().Desc)))
+	}
+	if len(entries) == 0 {
+		return ""
 	}
 
-	return lipgloss.NewStyle().Width(totalWidth).Align(lipgloss.Center).Render(strings.Join(finalStr, sep))
+	// Too narrow to show everything: drop hints rather than let the line be
+	// cut mid-word. Removal works backwards from the second-to-last entry so
+	// the first hint and Quit always survive - being unable to see how to
+	// leave is the worst thing to lose.
+	width := func(es []string) int {
+		w := lipgloss.Width(sep) * (len(es) - 1)
+		for _, e := range es {
+			w += lipgloss.Width(e)
+		}
+		return w
+	}
+	for len(entries) > 2 && width(entries) > totalWidth {
+		entries = append(entries[:len(entries)-2], entries[len(entries)-1])
+	}
+
+	// Width of the entries themselves, before any padding.
+	content := 0
+	for _, e := range entries {
+		content += lipgloss.Width(e)
+	}
+	separators := lipgloss.Width(sep) * (len(entries) - 1)
+
+	// Spread the slack between entries, but only as much as actually fits.
+	pad := 0
+	if slack := totalWidth - content - separators; slack > 0 {
+		pad = slack / (len(entries) * 2)
+	}
+	if pad > 0 {
+		gap := strings.Repeat(" ", pad)
+		for i := range entries {
+			entries[i] = gap + entries[i] + gap
+		}
+	}
+
+	return lipgloss.NewStyle().
+		Width(totalWidth).
+		MaxWidth(totalWidth).
+		MaxHeight(1).
+		Align(lipgloss.Center).
+		Render(strings.Join(entries, sep))
 }
 
 // ShortHelp implements help.KeyMap for backwards compatibility

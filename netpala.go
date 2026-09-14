@@ -868,6 +868,7 @@ func (m NetpalaData) View() string {
 	)
 
 	m.Tables.SelectedBox = m.selectedBox
+	m.StatusBar.Pane = m.selectedBox
 	m.Tables.SelectedEntry = m.SelectedEntry
 	m.Tables.KnownHeight = layout.Known
 	m.Tables.ScannedHeight = layout.Scanned
