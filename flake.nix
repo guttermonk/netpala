@@ -34,7 +34,7 @@
 
           meta = with pkgs.lib; {
             description = "A lightweight terminal-friendly NetworkManager wrapper written in Go";
-            homepage = "https://github.com/joel-sgc/netpala";
+            homepage = "https://github.com/guttermonk/netpala";
             license = licenses.wtfpl;
             maintainers = [ ];
             platforms = platforms.linux;
