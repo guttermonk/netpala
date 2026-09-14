@@ -118,6 +118,7 @@ var BoxBorder = lipgloss.Border{
 	Bottom: "─", Left: "│", Right: "│",
 	BottomLeft: "└", BottomRight: "┘",
 }
+
 func ActiveBorderStyle(color string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(color))
 }
@@ -211,6 +212,37 @@ func FormatVpnData(vpns []VpnConnection) [][]string {
 	return data
 }
 
+// ServiceStateLabel picks the clearest word for a unit's state.
+//
+// A Type=oneshot unit reports SubState "exited" once it has done its job and
+// its process has returned. For something whose whole purpose is to load a
+// firewall ruleset and finish, that IS success -- but "exited" reads like a
+// crash. Report what ActiveState says the unit is, and only reach for SubState
+// when it carries information ActiveState does not.
+func ServiceStateLabel(s SecurityService) string {
+	switch s.State {
+	case "active":
+		// "running" for a daemon still resident; "active" covers oneshot
+		// units that exited successfully and are held by RemainAfterExit.
+		if s.SubState == "running" {
+			return "running"
+		}
+		return "active"
+	case "failed":
+		return "failed"
+	case "inactive":
+		return "inactive"
+	case "activating":
+		return "starting"
+	case "deactivating":
+		return "stopping"
+	}
+	if s.SubState != "" {
+		return s.SubState
+	}
+	return s.State
+}
+
 func FormatSecurityData(services []SecurityService) [][]string {
 	data := [][]string{
 		padHeaders([]string{"", "Service", "Unit", "State"}, []int{5, 16, -1, 16}), {""},
@@ -221,14 +253,7 @@ func FormatSecurityData(services []SecurityService) [][]string {
 			marker = "  >  "
 		}
 
-		// SubState is the more useful word when it differs ("running" rather
-		// than "active", "dead" rather than "inactive").
-		state := s.State
-		if s.SubState != "" && s.SubState != s.State {
-			state = s.SubState
-		}
-
-		row := []string{marker, s.Name, s.Unit, state}
+		row := []string{marker, s.Name, s.Unit, ServiceStateLabel(s)}
 		for i := range row {
 			if lipgloss.Width(row[i]) > lipgloss.Width(data[0][i]) {
 				row[i] = row[i][:max(0, lipgloss.Width(data[0][i])-3)] + "..."
@@ -260,10 +285,10 @@ func FormatKnownNetworksData(networks []KnownNetwork, selectedRow int, height in
 		base = append(base, row)
 	}
 
-	if height < 10 {
-		height--
-	}
-	for i := 0; i < height-len(networks); i++ {
+	// Pad against the window rather than the full list, so the pane always
+	// occupies exactly `height` content rows no matter how many networks are
+	// saved. The layout in netpala.go budgets on that guarantee.
+	for i := len(window); i < height; i++ {
 		base = append(base, []string{""})
 	}
 	return base
@@ -289,7 +314,7 @@ func FormatScannedNetworksData(networks []ScannedNetwork, selectedRow int, heigh
 
 		data = append(data, row)
 	}
-	for i := 0; i < height-len(networks); i++ {
+	for i := len(window); i < height; i++ {
 		data = append(data, []string{""})
 	}
 	return data
