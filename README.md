@@ -204,6 +204,59 @@ so a non-default listener is still recognised.
 
 ---
 
+### Security Pane
+
+An optional pane listing systemd units, toggled with the select key like a VPN.
+It is aimed at things that change how traffic leaves the machine — a
+transparent Tor proxy, a local DNSCrypt daemon.
+
+```
+┌ Security ────────────────────────────────────────────────────────────────────┐
+│         Service                       Unit                        State      │
+│                                                                              │
+│  >        Tor                tor-transparent.service              exited     │
+│  >      DNSCrypt             dnscrypt-proxy2.service             running     │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**The pane hides itself when none of the configured units are installed**, so
+it costs nothing if you don't use it. State is read from systemd on every
+refresh rather than remembered, so a change made with `systemctl` shows up
+correctly — netpala reports what is true, not what it last asked for.
+
+Toggling needs a polkit rule permitting
+`org.freedesktop.systemd1.manage-units` for that specific unit. Without one you
+get an error naming the missing rule instead of a silent failure.
+
+`provides_dns = true` marks a unit that answers DNS on loopback. Stopping one
+while a saved network resolves through it would take out name resolution, so
+netpala names the affected networks and requires a second select press:
+
+```
+DNSCrypt resolves DNS for home (connected), cafe - stopping it breaks
+name resolution. Press select again to stop anyway.
+```
+
+The currently connected network is named first and flagged, since that is the
+one that breaks immediately. The confirmation is tied to the row it was given
+for and is cleared by any navigation or refresh. Starting a unit never prompts —
+only stopping can take something down.
+
+`state_file` records the choice so a boot-time unit can replay it. This is
+necessary because NixOS cannot use `systemctl enable` — `/etc/systemd/system`
+is a read-only symlink into the Nix store, so there is nowhere to write the
+`.wants` symlink.
+
+A worked example — a fail-closed nftables ruleset for transparent Tor plus the
+NixOS module, polkit rule and boot-time restore unit — is in
+[`contrib/tor-transparent/`](contrib/tor-transparent/).
+
+> **Note:** transparent proxying routes packets; it is not equivalent to Tor
+> Browser and the Tor Project does not recommend it as a substitute. It does
+> nothing about browser fingerprinting and gives you no stream isolation.
+
+---
+
 ## ⚙️ Configuration
 
 Netpala supports customizable keybindings through a configuration file located at `~/.config/netpala/config.toml`.
@@ -331,6 +384,7 @@ Colors can be specified as:
 - Enable/Disable devices
 - Toggle auto-connect and hidden per known network
 - Per-network DNS provider switcher (DHCP / Cloudflare / Google / DNSCrypt / Custom)
+- Optional Security pane for toggling systemd units (transparent Tor, DNSCrypt)
 - Communicates with NetworkManager + wpa_supplicant over DBus
 
 ---

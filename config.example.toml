@@ -80,6 +80,33 @@ help = "Cancel"
 [dns]
 dnscrypt_addresses = ["127.0.0.1"]
 
+# Security Pane Configuration
+#
+# systemd units shown in the Security pane and toggled with the select key.
+# Units that are not installed on this system are skipped, and the pane hides
+# itself entirely when nothing is left -- so listing one costs nothing.
+#
+# Toggling requires a polkit rule permitting
+# org.freedesktop.systemd1.manage-units for that unit. Without one you get a
+# clear error rather than a password prompt. See contrib/tor-transparent/.
+#
+# state_file (optional) records "on"/"off" after a successful toggle so a
+# boot-time unit can replay the choice. NixOS cannot use `systemctl enable`
+# for this: /etc/systemd/system is a read-only symlink into the Nix store.
+
+[[security.services]]
+name = "Tor"
+unit = "tor-transparent.service"
+state_file = "/var/lib/netpala/tor"
+
+# provides_dns marks a unit that answers DNS on loopback. Stopping one while a
+# saved network points its DNS at 127.0.0.1 takes out name resolution, so
+# netpala names the affected networks and makes you press select twice.
+[[security.services]]
+name = "DNSCrypt"
+unit = "dnscrypt-proxy2.service"
+provides_dns = true
+
 # Color Configuration
 # 
 # Customize the application colors using hex color codes (e.g., "#ffffff")
