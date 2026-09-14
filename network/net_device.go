@@ -75,16 +75,28 @@ func GetDevicesData(c *dbus.Conn) []common.Device {
 		}
 		// --- FIX END ---
 
-		var deviceState int = -1 // Default to disconnected
+		// Map every NM_DEVICE_STATE, not just the two obvious ones. Sending
+		// unlisted states to a "connecting" default meant a switched-off radio
+		// (UNAVAILABLE) and a failed connection (FAILED) both read as though
+		// they were still trying to connect.
+		deviceState := common.DeviceStateUnknown
 		if stateVar, ok := dp["State"]; ok {
 			state, _ := stateVar.Value().(uint32)
 			switch state {
 			case 100: // ACTIVATED
-				deviceState = 1
-			case 30: // DISCONNECTED
-				deviceState = -1
-			default: // PREPARE, CONFIG, NEED_AUTH, IP_CONFIG, etc.
-				deviceState = 0
+				deviceState = common.DeviceStateConnected
+			case 40, 50, 60, 70, 80, 90: // PREPARE, CONFIG, NEED_AUTH, IP_CONFIG, IP_CHECK, SECONDARIES
+				deviceState = common.DeviceStateConnecting
+			case 30, 110: // DISCONNECTED, DEACTIVATING
+				deviceState = common.DeviceStateDisconnected
+			case 120: // FAILED
+				deviceState = common.DeviceStateFailed
+			case 20: // UNAVAILABLE - radio off, rfkill, no carrier
+				deviceState = common.DeviceStateUnavailable
+			case 10: // UNMANAGED
+				deviceState = common.DeviceStateUnmanaged
+			case 0: // UNKNOWN
+				deviceState = common.DeviceStateUnknown
 			}
 		}
 
