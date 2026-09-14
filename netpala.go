@@ -247,11 +247,35 @@ func (m NetpalaData) stopWouldBreakDNS(svc common.SecurityService) bool {
 	// local resolver by something outside NetworkManager entirely, in which
 	// case the profile still reads "dhcp" while every lookup on the machine
 	// goes through this unit. Ask what is actually resolving.
-	if common.IsLoopbackDNS(m.EffectiveDNS) {
+	if m.resolverIsInUse() {
 		return true
 	}
 	current, ok := m.connectedNetwork()
 	return ok && current.DNSMode == common.DNSModeDNSCrypt
+}
+
+// resolverIsInUse reports whether the local resolver is one of the servers the
+// system is currently sending queries to.
+//
+// Matched against the addresses the resolver is configured to listen on, not
+// against "any loopback address": a machine can be resolving through
+// systemd-resolved on 127.0.0.53 while this unit listens on 127.0.0.1, and
+// stopping it then breaks nothing. Any overlap counts, because a resolver
+// listed at all is in the query path.
+func (m NetpalaData) resolverIsInUse() bool {
+	if m.Config == nil || len(m.EffectiveDNS) == 0 {
+		return false
+	}
+	listening := make(map[string]struct{}, len(m.Config.DNS.DnscryptAddresses))
+	for _, a := range m.Config.DNS.DnscryptAddresses {
+		listening[a] = struct{}{}
+	}
+	for _, e := range m.EffectiveDNS {
+		if _, ok := listening[e]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // dnsIsOverridden reports whether resolv.conf is being driven by something

@@ -321,3 +321,57 @@ func TestNoticeIsHonestWhenDNSIsOverridden(t *testing.T) {
 		t.Errorf("notice should admit netpala cannot move DNS, got: %q", m.DnsForm.Notice)
 	}
 }
+
+// Turning the resolver off when nothing is actually using it should just do
+// it, without routing through the replacement picker.
+func TestStopIsDirectWhenResolverIsNotInTheQueryPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		effective []string
+		profile   string
+		wantPopup bool
+	}{
+		{
+			name:      "resolving through the router, profile on DHCP",
+			effective: []string{"192.168.1.2", "192.168.1.1"},
+			profile:   common.DNSModeDHCP,
+		},
+		{
+			name:      "resolving through Cloudflare",
+			effective: []string{"1.1.1.1", "1.0.0.1"},
+			profile:   common.DNSModeCloudflare,
+		},
+		{
+			// A different local resolver owns DNS; stopping this one is harmless.
+			name:      "systemd-resolved stub, not this resolver",
+			effective: []string{"127.0.0.53"},
+			profile:   common.DNSModeDHCP,
+		},
+		{
+			name:      "this resolver is answering",
+			effective: []string{"127.0.0.1"},
+			profile:   common.DNSModeDHCP,
+			wantPopup: true,
+		},
+		{
+			name:      "this resolver is primary with a fallback behind it",
+			effective: []string{"127.0.0.1", "192.168.1.1"},
+			profile:   common.DNSModeDHCP,
+			wantPopup: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := linkModel(true, []common.KnownNetwork{net("home", true, tt.profile)})
+			m.EffectiveDNS = tt.effective
+			m.AppliedDNS = tt.effective
+
+			svc, _ := m.dnsService()
+			if got := m.stopWouldBreakDNS(svc); got != tt.wantPopup {
+				t.Errorf("stopWouldBreakDNS = %v, want %v (effective %v)",
+					got, tt.wantPopup, tt.effective)
+			}
+		})
+	}
+}
