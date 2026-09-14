@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func keyMsg(s string) tea.KeyMsg {
@@ -252,5 +254,76 @@ func TestDnsSelectUsesConfiguredDnscryptAddress(t *testing.T) {
 	m.SelectProvider(common.DNSModeDHCP, nil)
 	if !strings.Contains(dnscryptRow(t, m).View(), "127.0.0.53") {
 		t.Error("configured listener should appear in the picker")
+	}
+}
+
+// ">" marks what the network is set to, matching the Known Networks and
+// Security tables. It used to follow the cursor, which made it look as though
+// the setting had already changed just from scrolling the list.
+func TestMarkerTracksCurrentNotCursor(t *testing.T) {
+	m := ModelDnsSelect(config.DefaultColors(), nil)
+	m.SSID = "home"
+	m.SelectProvider(common.DNSModeCloudflare, nil)
+
+	markedRow := func(v string) string {
+		for _, line := range strings.Split(v, "\n") {
+			if strings.Contains(stripANSI(line), "> ") {
+				return strings.TrimSpace(stripANSI(line))
+			}
+		}
+		return ""
+	}
+
+	if got := markedRow(m.View()); !strings.Contains(got, "Cloudflare") {
+		t.Fatalf("on open, marker should be on Cloudflare, got %q", got)
+	}
+
+	// Scroll away; the marker must not follow.
+	for range 3 {
+		next, _ := m.Update(keyMsg("down"))
+		m = next.(DnsSelect)
+	}
+	if got := markedRow(m.View()); !strings.Contains(got, "Cloudflare") {
+		t.Errorf("after scrolling, marker moved to %q; it must stay on the current setting", got)
+	}
+	if m.Providers[m.Cursor].ID == common.DNSModeCloudflare {
+		t.Error("precondition: the cursor should have moved off Cloudflare")
+	}
+}
+
+// With the marker pinned, the highlight bar is the only cursor indicator, so
+// it has to actually be drawn.
+func TestCursorHighlightIsRendered(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor) // no TTY under test
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+
+	m := ModelDnsSelect(config.DefaultColors(), nil)
+	m.SSID = "home"
+	m.SelectProvider(common.DNSModeDHCP, nil)
+	next, _ := m.Update(keyMsg("down"))
+	m = next.(DnsSelect)
+
+	for _, line := range strings.Split(m.View(), "\n") {
+		if strings.Contains(line, "48;2;") { // a background colour was set
+			if !strings.Contains(stripANSI(line), "Cloudflare") {
+				t.Errorf("highlight is on %q, want the cursor row", strings.TrimSpace(stripANSI(line)))
+			}
+			return
+		}
+	}
+	t.Error("no highlighted row rendered; the cursor would be invisible")
+}
+
+func stripANSI(s string) string {
+	for {
+		i := strings.Index(s, "\x1b[")
+		if i < 0 {
+			return s
+		}
+		j := strings.Index(s[i:], "m")
+		if j < 0 {
+			return s
+		}
+		s = s[:i] + s[i+j+1:]
 	}
 }
