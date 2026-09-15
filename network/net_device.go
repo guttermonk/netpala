@@ -9,10 +9,16 @@ import (
 )
 
 const (
-	NMDest        = "org.freedesktop.NetworkManager"
-	NMPath        = "/org/freedesktop/NetworkManager"
-	PropsIF       = "org.freedesktop.DBus.Properties"
-	DevIF         = "org.freedesktop.NetworkManager.Device"
+	NMDest  = "org.freedesktop.NetworkManager"
+	NMPath  = "/org/freedesktop/NetworkManager"
+	PropsIF = "org.freedesktop.DBus.Properties"
+	DevIF   = "org.freedesktop.NetworkManager.Device"
+	// DevStateProp is the device's NM_DEVICE_STATE, read directly when a
+	// single device is being watched rather than the whole list.
+	DevStateProp = DevIF + ".State"
+	// DevIfaceProp is the kernel interface name, used to name the device in
+	// messages about it.
+	DevIfaceProp  = DevIF + ".Interface"
 	WifiIF        = "org.freedesktop.NetworkManager.Device.Wireless"
 	AccessPointIF = "org.freedesktop.NetworkManager.AccessPoint"
 )
@@ -75,29 +81,10 @@ func GetDevicesData(c *dbus.Conn) []common.Device {
 		}
 		// --- FIX END ---
 
-		// Map every NM_DEVICE_STATE, not just the two obvious ones. Sending
-		// unlisted states to a "connecting" default meant a switched-off radio
-		// (UNAVAILABLE) and a failed connection (FAILED) both read as though
-		// they were still trying to connect.
 		deviceState := common.DeviceStateUnknown
 		if stateVar, ok := dp["State"]; ok {
 			state, _ := stateVar.Value().(uint32)
-			switch state {
-			case 100: // ACTIVATED
-				deviceState = common.DeviceStateConnected
-			case 40, 50, 60, 70, 80, 90: // PREPARE, CONFIG, NEED_AUTH, IP_CONFIG, IP_CHECK, SECONDARIES
-				deviceState = common.DeviceStateConnecting
-			case 30, 110: // DISCONNECTED, DEACTIVATING
-				deviceState = common.DeviceStateDisconnected
-			case 120: // FAILED
-				deviceState = common.DeviceStateFailed
-			case 20: // UNAVAILABLE - radio off, rfkill, no carrier
-				deviceState = common.DeviceStateUnavailable
-			case 10: // UNMANAGED
-				deviceState = common.DeviceStateUnmanaged
-			case 0: // UNKNOWN
-				deviceState = common.DeviceStateUnknown
-			}
+			deviceState = DeviceStateFromNM(state)
 		}
 
 		// Defensive check for Interface name and HW Address
@@ -180,4 +167,27 @@ func GetDevicesData(c *dbus.Conn) []common.Device {
 		})
 	}
 	return devicesList
+}
+
+// DeviceStateFromNM collapses an NM_DEVICE_STATE to the values in common.
+//
+// Every state is mapped, not just the two obvious ones. Sending the unlisted
+// ones to a "connecting" default meant a switched-off radio (UNAVAILABLE) and
+// a failed connection (FAILED) both read as though they were still trying.
+func DeviceStateFromNM(state uint32) int {
+	switch state {
+	case 100: // ACTIVATED
+		return common.DeviceStateConnected
+	case 40, 50, 60, 70, 80, 90: // PREPARE, CONFIG, NEED_AUTH, IP_CONFIG, IP_CHECK, SECONDARIES
+		return common.DeviceStateConnecting
+	case 30, 110: // DISCONNECTED, DEACTIVATING
+		return common.DeviceStateDisconnected
+	case 120: // FAILED
+		return common.DeviceStateFailed
+	case 20: // UNAVAILABLE - radio off, rfkill, no carrier
+		return common.DeviceStateUnavailable
+	case 10: // UNMANAGED
+		return common.DeviceStateUnmanaged
+	}
+	return common.DeviceStateUnknown
 }

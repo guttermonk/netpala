@@ -330,6 +330,11 @@ func SetMacCmd(
 
 		cleanSettingsForUpdate(settings)
 
+		// Captured before the write overwrites it, so a driver that refuses
+		// the new address can be put back where it was.
+		prevMode := network.MACModeFromSettings(settings)
+		prevExplicit := network.MACAddressFromSettings(settings)
+
 		if err := applyMACToSettings(settings, mode, explicit); err != nil {
 			return common.ErrMsg{Err: err}
 		}
@@ -342,6 +347,14 @@ func SetMacCmd(
 		var cmds []tea.Cmd
 		if reactivate && devicePath != "" && devicePath != "/" {
 			cmds = append(cmds, ConnectToNetworkCmd(conn, connectionPath, devicePath))
+
+			// Only worth watching when the address actually changes. Going
+			// back to the mode the profile already had cannot fail this way,
+			// and reverting it would be a no-op.
+			if mode != prevMode || explicit != prevExplicit {
+				cmds = append(cmds, VerifyMacCmd(conn, connectionPath, devicePath,
+					mode, prevMode, prevExplicit, 0))
+			}
 		}
 		cmds = append(cmds, func() tea.Msg {
 			return common.KnownNetworksUpdateMsg(network.GetKnownNetworks(conn))

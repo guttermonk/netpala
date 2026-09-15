@@ -40,7 +40,7 @@ func TestDnsSelectHonoursReboundKeys(t *testing.T) {
 }
 
 func TestMacSelectHonoursReboundKeys(t *testing.T) {
-	m := ModelMacSelect(config.DefaultColors(), colemakKeys())
+	m := ModelMacSelect(config.DefaultColors(), colemakKeys(), "")
 	m.SSID = "home"
 	m.SelectMode(common.MACModeDefault, "")
 
@@ -118,7 +118,7 @@ func TestReboundLettersTypeIntoFocusedField(t *testing.T) {
 }
 
 func TestMacExplicitFieldAcceptsReboundLetters(t *testing.T) {
-	m := ModelMacSelect(config.DefaultColors(), colemakKeys())
+	m := ModelMacSelect(config.DefaultColors(), colemakKeys(), "")
 	m.SelectMode(common.MACModeExplicit, "")
 	if !m.Explicit.Focused() {
 		t.Fatal("precondition: the explicit field should be focused")

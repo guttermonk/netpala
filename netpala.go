@@ -44,6 +44,9 @@ type NetpalaData struct {
 	SelectedNetwork common.ScannedNetwork
 	DnsTarget       common.KnownNetwork
 	MacTarget       common.KnownNetwork
+	// NMMacDefault is what NetworkManager's global wifi.cloned-mac-address
+	// resolves to, read once so the MAC picker can name what "Default" means.
+	NMMacDefault string
 
 	// Unit waiting to be stopped once the live connection has been moved off
 	// it. Set when the DNS picker is opened to choose a replacement resolver,
@@ -406,6 +409,10 @@ func NetpalaModel() NetpalaData {
 
 	alert := bubbleup.NewAlertModel(40, true, 10)
 
+	// Read once: it is a file on disk that only changes with a NetworkManager
+	// reload, and the picker needs it every time it opens.
+	nmMacDefault := network.WifiMACDefault()
+
 	return NetpalaData{
 		Conn:        Conn,
 		Err:         err,
@@ -421,10 +428,12 @@ func NetpalaModel() NetpalaData {
 		Tables:    models.TablesModel{},
 		StatusBar: models.ModelStatusBar(keyMap, cfg.Colors),
 
+		NMMacDefault: nmMacDefault,
+
 		PasswordForm: models.ModelPasswordInput(cfg.Colors),
 		Form:         models.ModelWpaEapForm(cfg.Colors),
 		DnsForm:      models.ModelDnsSelect(cfg.Colors, cfg.KeyBindings, cfg.DNS.DnscryptAddresses),
-		MacForm:      models.ModelMacSelect(cfg.Colors, cfg.KeyBindings),
+		MacForm:      models.ModelMacSelect(cfg.Colors, cfg.KeyBindings, nmMacDefault),
 		Overlay: overlay.Model{
 			XPosition: overlay.Left,
 			YPosition: overlay.Center,
@@ -646,13 +655,13 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case common.ExitFormMsg:
 			m.PopupState = -1
-			m.MacForm = models.ModelMacSelect(m.Colors, m.Config.KeyBindings)
+			m.MacForm = models.ModelMacSelect(m.Colors, m.Config.KeyBindings, m.NMMacDefault)
 			return m, nil
 
 		case common.SubmitMacMsg:
 			m.PopupState = -1
 			target := m.MacTarget
-			m.MacForm = models.ModelMacSelect(m.Colors, m.Config.KeyBindings)
+			m.MacForm = models.ModelMacSelect(m.Colors, m.Config.KeyBindings, m.NMMacDefault)
 
 			// The address is chosen when the interface associates, so the
 			// connection has to be rebuilt for a change to take effect.
@@ -886,7 +895,7 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0 {
 				m.MacTarget = m.KnownNetworks[m.SelectedEntry]
 
-				m.MacForm = models.ModelMacSelect(m.Colors, m.Config.KeyBindings)
+				m.MacForm = models.ModelMacSelect(m.Colors, m.Config.KeyBindings, m.NMMacDefault)
 				m.MacForm.SSID = m.MacTarget.SSID
 				m.MacForm.SelectMode(m.MacTarget.MACMode, m.MacTarget.MACAddress)
 
@@ -1026,6 +1035,12 @@ func (m NetpalaData) handleDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
 	case common.PerformScanRefreshMsg:
 		// The debounce timer fired, now perform the scan.
 		return m, dbus.GetScanResults(m.Conn), true
+
+	case common.MacRevertedMsg:
+		// Not an ErrMsg: nothing the user did was wrong, and the situation has
+		// already been repaired. They still have to be told, because the
+		// setting they chose is not the one now in effect.
+		return m, m.Alert.NewAlertCmd(bubbleup.WarnKey, dbus.MacRevertedText(msg)), true
 
 	case common.ErrMsg:
 		// 1. Generate the command. This command produces the internal 'alertMsg'

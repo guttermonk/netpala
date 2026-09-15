@@ -27,7 +27,10 @@ type MacSelect struct {
 	Keys config.KeyBindings
 }
 
-func ModelMacSelect(colors config.Colors, keys config.KeyBindings) MacSelect {
+// ModelMacSelect builds the picker. nmDefault is what NetworkManager's global
+// wifi.cloned-mac-address resolves to, used to describe the "Default" row; ""
+// leaves it described in general terms.
+func ModelMacSelect(colors config.Colors, keys config.KeyBindings, nmDefault string) MacSelect {
 	input := textinput.New()
 	input.Placeholder = "02:11:22:33:44:55"
 	input.Prompt = ""
@@ -35,7 +38,7 @@ func ModelMacSelect(colors config.Colors, keys config.KeyBindings) MacSelect {
 	input.CharLimit = 17
 
 	return MacSelect{
-		Options:  common.MACOptions,
+		Options:  common.MACOptionsFor(nmDefault),
 		Explicit: input,
 		Colors:   colors,
 		Keys:     keys,
