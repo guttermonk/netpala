@@ -3,6 +3,7 @@ package models
 import (
 	"netpala/common"
 	"netpala/config"
+	"strings"
 	"testing"
 )
 
@@ -141,5 +142,40 @@ func TestMoveCursorStopsAtTheEnds(t *testing.T) {
 	}
 	if got := moveCursor(2, 1, 3); got != 2 {
 		t.Errorf("moving down from the bottom gave %d, want 2 (no wrap)", got)
+	}
+}
+
+func TestNavHintNamesTheConfiguredKeys(t *testing.T) {
+	if got := navHint(colemakKeys()); got != "i/e" {
+		t.Errorf("navHint = %q, want i/e", got)
+	}
+	if got := navHint(config.DefaultKeyBindings()); got != "k/j" {
+		t.Errorf("navHint = %q, want k/j for the defaults", got)
+	}
+
+	// Arrow-only bindings have nothing better to advertise.
+	arrows := config.KeyBindings{
+		Up:   config.KeyBinding{Keys: []string{"up"}},
+		Down: config.KeyBinding{Keys: []string{"down"}},
+	}
+	if got := navHint(arrows); got != "↑/↓" {
+		t.Errorf("navHint = %q, want the arrows", got)
+	}
+
+	// An unconfigured picker must still describe something usable.
+	if got := navHint(config.KeyBindings{}); got != "↑/↓" {
+		t.Errorf("navHint = %q, want the arrows as a fallback", got)
+	}
+}
+
+// The footer has to agree with what the popup actually accepts.
+func TestFooterAdvertisesWorkingKeys(t *testing.T) {
+	m := ModelMacSelect(config.DefaultColors(), colemakKeys(), "permanent")
+	m.SSID = "home"
+	m.SelectMode(common.MACModeDefault, "")
+
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "i/e choose") {
+		t.Errorf("footer does not name the configured keys:\n%s", view)
 	}
 }

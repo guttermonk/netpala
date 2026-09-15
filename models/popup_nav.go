@@ -49,3 +49,33 @@ func moveCursor(cursor, delta, length int) int {
 	}
 	return next
 }
+
+// navHint names the keys that move the cursor, for the popup footer.
+//
+// Advertising only the arrows while the configured keys also work is the
+// smaller half of the bug this file fixes: someone who rebound Up and Down has
+// no way to learn from the popup that their own keys apply here too.
+func navHint(keys config.KeyBindings) string {
+	up, down := firstKey(keys.Up), firstKey(keys.Down)
+	if up == "" || down == "" {
+		return "↑/↓"
+	}
+	return up + "/" + down
+}
+
+// firstKey picks the binding to advertise, preferring a printable key over an
+// arrow because the arrows work regardless and need no advertising.
+func firstKey(kb config.KeyBinding) string {
+	var arrow string
+	for _, k := range kb.Keys {
+		switch k {
+		case "up":
+			arrow = "↑"
+		case "down":
+			arrow = "↓"
+		default:
+			return k
+		}
+	}
+	return arrow
+}

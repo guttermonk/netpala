@@ -269,7 +269,7 @@ func (m DnsSelect) View() string {
 	}
 
 	rows = append(rows, "", descStyle.Width(54).Align(lipgloss.Center).
-		Render("↑/↓ choose · ⤶ apply · ⎋ cancel"))
+		Render(navHint(m.Keys)+" choose · ⤶ apply · ⎋ cancel"))
 
 	return containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
