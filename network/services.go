@@ -27,6 +27,7 @@ func GetSecurityServices(conn *dbus.Conn, configured []common.SecurityServiceCon
 	mgr := conn.Object(SystemdDest, dbus.ObjectPath(SystemdPath))
 
 	var out []common.SecurityService
+	byUnit := make(map[string]struct{}, len(configured))
 	for _, c := range configured {
 		if c.Unit == "" {
 			continue
@@ -51,17 +52,33 @@ func GetSecurityServices(conn *dbus.Conn, configured []common.SecurityServiceCon
 			continue
 		}
 
+		// Resolve to the canonical name. systemd unit renames leave the old
+		// name behind as an alias, so a config naming either one loads the
+		// same unit -- but the two strings are not interchangeable elsewhere:
+		// a polkit rule matches the name it is handed, and a NixOS override of
+		// the alias defines a second, unrelated unit instead of changing the
+		// real one. Using Id everywhere keeps netpala on the name systemd
+		// itself uses.
+		unitName := c.Unit
+		if id, _ := props["Id"].Value().(string); id != "" {
+			unitName = id
+		}
+		if _, seen := byUnit[unitName]; seen {
+			continue // an alias of something already listed
+		}
+		byUnit[unitName] = struct{}{}
+
 		activeState, _ := props["ActiveState"].Value().(string)
 		subState, _ := props["SubState"].Value().(string)
 
 		name := c.Name
 		if name == "" {
-			name = strings.TrimSuffix(c.Unit, ".service")
+			name = strings.TrimSuffix(unitName, ".service")
 		}
 
 		out = append(out, common.SecurityService{
 			Name:        name,
-			Unit:        c.Unit,
+			Unit:        unitName,
 			StateFile:   c.StateFile,
 			ProvidesDNS: c.ProvidesDNS,
 			Active:      activeState == "active",
