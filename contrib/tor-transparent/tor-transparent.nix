@@ -136,6 +136,22 @@ in
 
   config = lib.mkIf cfg.enable {
 
+    # nftables resolves these names when the ruleset loads, and errors on one
+    # it cannot find. Listing a user whose service is not enabled would make
+    # tor-transparent.service fail to start - so transparent proxying would be
+    # off entirely, which is the opposite of what someone editing this list
+    # intends. Caught at build time rather than at the next reboot.
+    assertions = map (user: {
+      assertion = config.users.users ? ${user};
+      message = ''
+        services.torTransparent.directUsers lists "${user}", but no such user
+        is defined. nftables resolves these names when the ruleset loads, so
+        tor-transparent.service would fail and transparent Tor proxying would
+        be off. Enable the service that creates the user (for i2pd that is
+        services.i2pd.enable), or drop it from the list.
+      '';
+    }) cfg.directUsers;
+
     services.tor = {
       enable = true;
       client = {

@@ -160,21 +160,27 @@ toggle and `i2pd.service` is in the default service list:
 
 ```nix
 services.i2pd.enable = true;
-```
-
-**I2P does not work while transparent Tor proxying is active**, though. I2P's
-main transport is UDP, which the fail-closed ruleset drops, and its TCP would
-be redirected into Tor. To run both, exempt its user:
-
-```nix
 services.torTransparent.directUsers = [ "i2pd" ];
 ```
 
-That is a deliberate hole in the ruleset and is empty by default. i2pd's
-traffic then leaves directly — still I2P-encrypted and only to I2P peers, but
-identifiable as I2P on the wire. Tunnelling I2P through Tor is not the
-alternative: it breaks I2P's transport and buys nothing, since I2P is itself an
-anonymity network.
+**Tor, DNSCrypt and I2P can all run at once**, which is what that second line
+is for. They are not alternatives: each owns a different class of traffic —
+DNSCrypt answers DNS, Tor carries clearnet and `.onion`, and I2P carries
+`.i2p`, an address space Tor cannot reach at all.
+
+For that to work, i2pd's own traffic has to reach I2P peers **directly**.
+Without the exemption the ruleset drops it: I2P's main transport is UDP, which
+is dropped as unroutable through Tor, and its TCP would be redirected into
+Tor's TransPort, where exits refuse the ports I2P peers use. Tunnelling I2P
+through Tor is not the alternative — it breaks I2P's transport and buys
+nothing, since I2P is itself an anonymity network.
+
+`directUsers` is empty by default because it is a deliberate hole in a
+fail-closed ruleset, and enabling the module should not quietly open one. With
+i2pd listed, its traffic leaves directly: still I2P-encrypted and only to I2P
+peers, so nothing is in plaintext, but **identifiable as I2P on the wire**. If
+your threat model includes hiding that you use an anonymity network at all,
+that matters; if it is anonymising what you do, I2P provides that itself.
 
 Note that I2P is an overlay for I2P-internal services rather than a
 general-purpose exit, so there is no transparent-proxy equivalent to the Tor
