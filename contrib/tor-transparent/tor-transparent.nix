@@ -25,7 +25,23 @@
 let
   cfg = config.services.torTransparent;
 
-  ruleset = pkgs.writeText "tor-transparent.nft" (builtins.readFile ./ruleset.nft);
+  # ruleset.nft exempts tor alone, so it loads and can be reviewed on its own.
+  # When directUsers is set, the two skuid matches are widened to a set. The
+  # substitution is deliberately narrow: it only rewrites those exact lines, so
+  # a change to the ruleset that moves or renames them fails loudly at build
+  # time rather than silently dropping the exemption.
+  bypassSet = "{ " + lib.concatMapStringsSep ", " (u: ''"${u}"'') ([ "tor" ] ++ cfg.directUsers) + " }";
+
+  rulesetText =
+    if cfg.directUsers == [ ] then
+      builtins.readFile ./ruleset.nft
+    else
+      builtins.replaceStrings
+        [ ''meta skuid "tor" return'' ''meta skuid "tor" accept'' ]
+        [ ''meta skuid ${bypassSet} return'' ''meta skuid ${bypassSet} accept'' ]
+        (builtins.readFile ./ruleset.nft);
+
+  ruleset = pkgs.writeText "tor-transparent.nft" rulesetText;
 
   nft = "${pkgs.nftables}/bin/nft";
 
@@ -66,6 +82,29 @@ in
         Replay {option}`stateFile` at boot. NixOS cannot use `systemctl
         enable` for this: /etc/systemd/system is a read-only symlink into
         the Nix store, so there is nowhere to write the .wants symlink.
+      '';
+    };
+
+    directUsers = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "i2pd" ];
+      description = ''
+        Users whose traffic bypasses the Tor redirect entirely, in addition to
+        tor itself.
+
+        This is a hole in the fail-closed ruleset and is empty by default. The
+        case it exists for is another anonymity network: i2pd carries its own
+        transport, mostly over UDP, which this ruleset drops, and its TCP would
+        otherwise be redirected into Tor - so I2P simply does not work while
+        transparent proxying is on unless its user is listed here.
+
+        Adding a user means their traffic leaves directly. For i2pd that
+        traffic is I2P-encrypted and only reaches I2P peers, so it is not
+        plaintext, but it is identifiable as I2P on the wire. If your threat
+        model includes hiding *that you use* an anonymity network, this
+        defeats it; if it is anonymising what you do, I2P provides that
+        itself and does not benefit from being tunnelled through Tor.
       '';
     };
 

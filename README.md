@@ -153,6 +153,34 @@ through Tor until the unit is started, from the Security pane or with
 `systemctl start tor-transparent`. See that directory's files for what the
 ruleset does and its limitations.
 
+#### Optional: I2P
+
+I2P needs nothing netpala-specific — the Security pane is a generic systemd
+toggle and `i2pd.service` is in the default service list:
+
+```nix
+services.i2pd.enable = true;
+```
+
+**I2P does not work while transparent Tor proxying is active**, though. I2P's
+main transport is UDP, which the fail-closed ruleset drops, and its TCP would
+be redirected into Tor. To run both, exempt its user:
+
+```nix
+services.torTransparent.directUsers = [ "i2pd" ];
+```
+
+That is a deliberate hole in the ruleset and is empty by default. i2pd's
+traffic then leaves directly — still I2P-encrypted and only to I2P peers, but
+identifiable as I2P on the wire. Tunnelling I2P through Tor is not the
+alternative: it breaks I2P's transport and buys nothing, since I2P is itself an
+anonymity network.
+
+Note that I2P is an overlay for I2P-internal services rather than a
+general-purpose exit, so there is no transparent-proxy equivalent to the Tor
+setup. i2pd exposes an HTTP proxy on `127.0.0.1:4444` and SOCKS on `4447` for
+applications that opt in.
+
 #### Development shell
 
 ```bash
