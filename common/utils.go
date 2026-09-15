@@ -12,7 +12,15 @@ import (
 	"golang.org/x/term"
 )
 
+// windowSizeForTest overrides the terminal size when non-zero, so table and
+// status-bar layout can be exercised at widths other than whatever the test
+// runner happens to have.
+var windowSizeForTest struct{ Width, Height int }
+
 func WindowDimensions() struct{ Width, Height int } {
+	if windowSizeForTest.Width > 0 {
+		return windowSizeForTest
+	}
 	width, height, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil {
 		return struct{ Width, Height int }{80, 80}
@@ -267,7 +275,13 @@ func FormatSecurityData(services []SecurityService) [][]string {
 
 func FormatKnownNetworksData(networks []KnownNetwork, selectedRow int, height int) [][]string {
 	base := [][]string{
-		padHeaders([]string{"", "Name", "Security", "DNS", "MAC", "Hidden", "Auto-Connect", "Signal"}, []int{5, -1, 11, 10, 10, 8, 13, 8}), {""},
+		// Name is the only flexible column, so it absorbs all the slack: at 140
+		// columns it was 73 wide for SSIDs of at most 32. The fixed widths are
+		// sized to their longest real value plus a space ("Cloudflare" is 10,
+		// "Permanent" 9, the "Auto-Connect" header 12), which leaves Name
+		// roomier on a narrow terminal without truncating anything on a wide
+		// one.
+		padHeaders([]string{"", "Name", "Security", "DNS", "MAC", "Hidden", "Auto-Connect", "Signal"}, []int{5, -1, 10, 11, 10, 7, 12, 7}), {""},
 	}
 	window := FormatArrays(networks, selectedRow, height)
 	for _, n := range window {
@@ -365,4 +379,10 @@ func SortDevicesBySignal(devices []ScannedNetwork) {
 		// Secondary sort: SSID ascending (case-insensitive)
 		return strings.Compare(strings.ToLower(a.SSID), strings.ToLower(b.SSID))
 	})
+}
+
+// SetWindowSizeForTest overrides the reported terminal size. Tests call it
+// with 0 to restore the real one.
+func SetWindowSizeForTest(w, h int) {
+	windowSizeForTest.Width, windowSizeForTest.Height = w, h
 }
