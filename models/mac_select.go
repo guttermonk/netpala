@@ -22,9 +22,12 @@ type MacSelect struct {
 	// from Cursor, which is only where the highlight sits.
 	Current string
 	Colors  config.Colors
+	// Keys is the user's navigation configuration, honoured here so a rebound
+	// Up/Down works in the popup as well as in the tables behind it.
+	Keys config.KeyBindings
 }
 
-func ModelMacSelect(colors config.Colors) MacSelect {
+func ModelMacSelect(colors config.Colors, keys config.KeyBindings) MacSelect {
 	input := textinput.New()
 	input.Placeholder = "02:11:22:33:44:55"
 	input.Prompt = ""
@@ -35,6 +38,7 @@ func ModelMacSelect(colors config.Colors) MacSelect {
 		Options:  common.MACOptions,
 		Explicit: input,
 		Colors:   colors,
+		Keys:     keys,
 	}
 }
 
@@ -78,20 +82,6 @@ func (m MacSelect) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc", "ctrl+c":
 			return m, func() tea.Msg { return common.ExitFormMsg{} }
 
-		case "up", "shift+tab":
-			if m.Cursor > 0 {
-				m.Cursor--
-			}
-			m.onCursorMove()
-			return m, nil
-
-		case "down", "tab":
-			if m.Cursor < len(m.Options)-1 {
-				m.Cursor++
-			}
-			m.onCursorMove()
-			return m, nil
-
 		case "enter":
 			option := m.Options[m.Cursor]
 			if option.ID == common.MACModeExplicit {
@@ -105,27 +95,19 @@ func (m MacSelect) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return common.SubmitMacMsg{ModeID: option.ID, Explicit: value}
 			}
 		}
+
+		if d := navDelta(m.Keys, key, m.Explicit.Focused()); d != 0 {
+			m.Cursor = moveCursor(m.Cursor, d, len(m.Options))
+			m.onCursorMove()
+			return m, nil
+		}
 	}
 
-	// While the address field is focused everything else is typing; the list
-	// is navigated with the arrows and tab only.
+	// Anything that did not navigate is typing, so it belongs to the input.
 	if m.Explicit.Focused() {
 		var cmd tea.Cmd
 		m.Explicit, cmd = m.Explicit.Update(msg)
 		cmds = append(cmds, cmd)
-	} else if key, ok := msg.(tea.KeyMsg); ok {
-		switch key.String() {
-		case "k":
-			if m.Cursor > 0 {
-				m.Cursor--
-			}
-			m.onCursorMove()
-		case "j":
-			if m.Cursor < len(m.Options)-1 {
-				m.Cursor++
-			}
-			m.onCursorMove()
-		}
 	}
 
 	return m, tea.Batch(cmds...)

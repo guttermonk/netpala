@@ -313,7 +313,7 @@ func (m *NetpalaData) openDnsPickerForStop(svc common.SecurityService) {
 	m.DnsTarget = target
 	m.pendingStopUnit = svc.Unit
 
-	m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.DNS.DnscryptAddresses)
+	m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.KeyBindings, m.Config.DNS.DnscryptAddresses)
 	m.DnsForm.SSID = target.SSID
 
 	if m.dnsIsOverridden() {
@@ -423,8 +423,8 @@ func NetpalaModel() NetpalaData {
 
 		PasswordForm: models.ModelPasswordInput(cfg.Colors),
 		Form:         models.ModelWpaEapForm(cfg.Colors),
-		DnsForm:      models.ModelDnsSelect(cfg.Colors, cfg.DNS.DnscryptAddresses),
-		MacForm:      models.ModelMacSelect(cfg.Colors),
+		DnsForm:      models.ModelDnsSelect(cfg.Colors, cfg.KeyBindings, cfg.DNS.DnscryptAddresses),
+		MacForm:      models.ModelMacSelect(cfg.Colors, cfg.KeyBindings),
 		Overlay: overlay.Model{
 			XPosition: overlay.Left,
 			YPosition: overlay.Center,
@@ -570,7 +570,7 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case common.ExitFormMsg:
 			m.PopupState = -1
-			m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.DNS.DnscryptAddresses)
+			m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.KeyBindings, m.Config.DNS.DnscryptAddresses)
 
 			// Backing out of "pick a replacement" means the resolver stays up.
 			// Stopping it anyway is the exact outage this flow exists to avoid.
@@ -580,7 +580,7 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case common.SubmitDnsMsg:
 			m.PopupState = -1
 			target := m.DnsTarget
-			m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.DNS.DnscryptAddresses)
+			m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.KeyBindings, m.Config.DNS.DnscryptAddresses)
 
 			// Resolve against the configured list, not the package defaults, so
 			// a DNSCrypt proxy on a non-default address is honoured.
@@ -646,13 +646,13 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case common.ExitFormMsg:
 			m.PopupState = -1
-			m.MacForm = models.ModelMacSelect(m.Colors)
+			m.MacForm = models.ModelMacSelect(m.Colors, m.Config.KeyBindings)
 			return m, nil
 
 		case common.SubmitMacMsg:
 			m.PopupState = -1
 			target := m.MacTarget
-			m.MacForm = models.ModelMacSelect(m.Colors)
+			m.MacForm = models.ModelMacSelect(m.Colors, m.Config.KeyBindings)
 
 			// The address is chosen when the interface associates, so the
 			// connection has to be rebuilt for a change to take effect.
@@ -867,7 +867,7 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0 {
 				m.DnsTarget = m.KnownNetworks[m.SelectedEntry]
 
-				m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.DNS.DnscryptAddresses)
+				m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.KeyBindings, m.Config.DNS.DnscryptAddresses)
 				m.DnsForm.SSID = m.DnsTarget.SSID
 				m.DnsForm.SelectProvider(m.DnsTarget.DNSMode, m.DnsTarget.DNSServers)
 
@@ -886,7 +886,7 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0 {
 				m.MacTarget = m.KnownNetworks[m.SelectedEntry]
 
-				m.MacForm = models.ModelMacSelect(m.Colors)
+				m.MacForm = models.ModelMacSelect(m.Colors, m.Config.KeyBindings)
 				m.MacForm.SSID = m.MacTarget.SSID
 				m.MacForm.SelectMode(m.MacTarget.MACMode, m.MacTarget.MACAddress)
 

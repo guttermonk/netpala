@@ -417,7 +417,7 @@ func TestDataRefreshesApplyWithAPopupOpen(t *testing.T) {
 func TestKeyPressesStillGoToTheOpenPopup(t *testing.T) {
 	m := linkModel(false, []common.KnownNetwork{net("home", true, common.DNSModeDHCP)})
 	m.PopupState = 3
-	m.DnsForm = models.ModelDnsSelect(m.Colors, nil)
+	m.DnsForm = models.ModelDnsSelect(m.Colors, config.DefaultKeyBindings(), nil)
 	m.DnsForm.SelectProvider(common.DNSModeDHCP, nil)
 
 	before := m.DnsForm.Cursor

@@ -31,6 +31,9 @@ type DnsSelect struct {
 	// from Cursor, which is only where the highlight sits.
 	Current string
 	Colors  config.Colors
+	// Keys is the user's navigation configuration. The picker honours it so a
+	// rebound Up/Down works here as well as in the tables behind it.
+	Keys config.KeyBindings
 
 	// Notice explains why the picker opened when netpala opened it rather
 	// than the user. Without it a popup appearing on its own is a mystery.
@@ -42,7 +45,7 @@ type DnsSelect struct {
 	armed      bool
 }
 
-func ModelDnsSelect(colors config.Colors, dnscryptAddrs []string) DnsSelect {
+func ModelDnsSelect(colors config.Colors, keys config.KeyBindings, dnscryptAddrs []string) DnsSelect {
 	input := textinput.New()
 	input.Placeholder = "9.9.9.9, 149.112.112.112"
 	input.Prompt = ""
@@ -53,6 +56,7 @@ func ModelDnsSelect(colors config.Colors, dnscryptAddrs []string) DnsSelect {
 		Providers: common.DNSProvidersFor(dnscryptAddrs),
 		Custom:    input,
 		Colors:    colors,
+		Keys:      keys,
 	}
 }
 
@@ -133,18 +137,6 @@ func (m DnsSelect) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc", "ctrl+c":
 			return m, func() tea.Msg { return common.ExitFormMsg{} }
 
-		case "up", "shift+tab":
-			if m.Cursor > 0 {
-				m.Cursor--
-			}
-			return m, m.onCursorMove()
-
-		case "down", "tab":
-			if m.Cursor < len(m.Providers)-1 {
-				m.Cursor++
-			}
-			return m, m.onCursorMove()
-
 		case "enter":
 			provider := m.Providers[m.Cursor]
 
@@ -172,27 +164,18 @@ func (m DnsSelect) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return common.SubmitDnsMsg{ProviderID: provider.ID, Custom: value}
 			}
 		}
+
+		if d := navDelta(m.Keys, key, m.Custom.Focused()); d != 0 {
+			m.Cursor = moveCursor(m.Cursor, d, len(m.Providers))
+			return m, m.onCursorMove()
+		}
 	}
 
-	// j/k would be swallowed by the text input while Custom is focused, so the
-	// list is navigated with the arrows/tab only. Everything else goes to input.
+	// Anything that did not navigate is typing, so it belongs to the input.
 	if m.Custom.Focused() {
 		var cmd tea.Cmd
 		m.Custom, cmd = m.Custom.Update(msg)
 		cmds = append(cmds, cmd)
-	} else if key, ok := msg.(tea.KeyMsg); ok {
-		switch key.String() {
-		case "k":
-			if m.Cursor > 0 {
-				m.Cursor--
-			}
-			cmds = append(cmds, m.onCursorMove())
-		case "j":
-			if m.Cursor < len(m.Providers)-1 {
-				m.Cursor++
-			}
-			cmds = append(cmds, m.onCursorMove())
-		}
 	}
 
 	return m, tea.Batch(cmds...)

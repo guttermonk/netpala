@@ -41,7 +41,7 @@ func send(t *testing.T, m DnsSelect, keys ...string) (DnsSelect, tea.Msg) {
 }
 
 func newForm() DnsSelect {
-	m := ModelDnsSelect(config.DefaultColors(), nil)
+	m := ModelDnsSelect(config.DefaultColors(), config.DefaultKeyBindings(), nil)
 	m.SSID = "nikolatesla2"
 	m.SelectProvider(common.DNSModeDHCP, nil)
 	return m
@@ -137,13 +137,13 @@ func TestDnsSelectRejectsBadCustomInput(t *testing.T) {
 }
 
 func TestDnsSelectPreselectsCurrentProvider(t *testing.T) {
-	m := ModelDnsSelect(config.DefaultColors(), nil)
+	m := ModelDnsSelect(config.DefaultColors(), config.DefaultKeyBindings(), nil)
 	m.SelectProvider(common.DNSModeGoogle, nil)
 	if common.DNSProviders[m.Cursor].ID != common.DNSModeGoogle {
 		t.Errorf("cursor on %q, want google", common.DNSProviders[m.Cursor].ID)
 	}
 
-	m = ModelDnsSelect(config.DefaultColors(), nil)
+	m = ModelDnsSelect(config.DefaultColors(), config.DefaultKeyBindings(), nil)
 	m.SelectProvider(common.DNSModeCustom, []string{"9.9.9.9", "149.112.112.112"})
 	if m.Custom.Value() != "9.9.9.9, 149.112.112.112" {
 		t.Errorf("custom field = %q, want the saved servers", m.Custom.Value())
@@ -249,7 +249,7 @@ func TestDnsSelectStaleProbeIgnored(t *testing.T) {
 }
 
 func TestDnsSelectUsesConfiguredDnscryptAddress(t *testing.T) {
-	m := ModelDnsSelect(config.DefaultColors(), []string{"127.0.0.53"})
+	m := ModelDnsSelect(config.DefaultColors(), config.DefaultKeyBindings(), []string{"127.0.0.53"})
 	m.SSID = "home"
 	m.SelectProvider(common.DNSModeDHCP, nil)
 	if !strings.Contains(dnscryptRow(t, m).View(), "127.0.0.53") {
@@ -261,7 +261,7 @@ func TestDnsSelectUsesConfiguredDnscryptAddress(t *testing.T) {
 // Security tables. It used to follow the cursor, which made it look as though
 // the setting had already changed just from scrolling the list.
 func TestMarkerTracksCurrentNotCursor(t *testing.T) {
-	m := ModelDnsSelect(config.DefaultColors(), nil)
+	m := ModelDnsSelect(config.DefaultColors(), config.DefaultKeyBindings(), nil)
 	m.SSID = "home"
 	m.SelectProvider(common.DNSModeCloudflare, nil)
 
@@ -297,7 +297,7 @@ func TestCursorHighlightIsRendered(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor) // no TTY under test
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 
-	m := ModelDnsSelect(config.DefaultColors(), nil)
+	m := ModelDnsSelect(config.DefaultColors(), config.DefaultKeyBindings(), nil)
 	m.SSID = "home"
 	m.SelectProvider(common.DNSModeDHCP, nil)
 	next, _ := m.Update(keyMsg("down"))
