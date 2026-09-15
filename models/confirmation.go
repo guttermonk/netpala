@@ -3,6 +3,7 @@ package models
 import (
 	"netpala/common"
 	"netpala/config"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -43,6 +44,10 @@ func (m Confirmation) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// confirmWidth is the popup's content width. Wide enough that a paragraph of
+// consent text does not turn into a column of three-word lines.
+const confirmWidth = 60
+
 func (m Confirmation) View() string {
 	containerStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
@@ -50,7 +55,7 @@ func (m Confirmation) View() string {
 		Foreground(lipgloss.Color(m.Colors.Primary)).
 		Align(lipgloss.Center).
 		Padding(0, 1).
-		Width(50)
+		Width(confirmWidth)
 
 	inactiveBorderStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
@@ -74,12 +79,28 @@ func (m Confirmation) View() string {
 		cancelButton = inactiveBorderStyle.Render("Cancel")
 	}
 
+	// A one-line question reads best centred, but centring several paragraphs
+	// leaves both edges ragged and is genuinely hard to read - which matters
+	// most for exactly the messages that are long, since those are the ones
+	// asking the user to understand something before agreeing to it. A blank
+	// line between the prose and the buttons keeps them from looking like part
+	// of the last sentence.
+	message := strings.TrimRight(m.Message, "\n")
+	if strings.Contains(message, "\n\n") {
+		message = lipgloss.NewStyle().
+			Width(confirmWidth - 2).
+			Align(lipgloss.Left).
+			Render(message)
+	}
+
+	// Centred explicitly: a full-width left-aligned message sets the block
+	// width, which would otherwise pull the buttons over to the left with it.
+	buttons := lipgloss.NewStyle().
+		Width(confirmWidth - 2).
+		Align(lipgloss.Center).
+		Render(lipgloss.JoinHorizontal(lipgloss.Center, cancelButton, confirmButton))
+
 	return containerStyle.Render(
-		lipgloss.JoinVertical(lipgloss.Left,
-			m.Message,
-			lipgloss.JoinHorizontal(lipgloss.Center,
-				cancelButton, confirmButton,
-			),
-		),
+		lipgloss.JoinVertical(lipgloss.Left, message, "", buttons),
 	)
 }

@@ -80,10 +80,21 @@ func DefaultSecurity() Security {
 			// replay it. The paths match what the contrib NixOS module derives
 			// from the unit name; if the two disagree the choice is written
 			// and then never read, and the service quietly reverts on reboot.
+			// The confirm texts describe the contrib module's ruleset and a
+			// stock i2pd. Both are start-only, and both lead with what leaves
+			// the machine, since that is the part a user cannot see for
+			// themselves once it is running.
 			{
 				Name:      "Tor",
 				Unit:      "tor-transparent.service",
 				StateFile: "/var/lib/netpala/tor-transparent",
+				Confirm: "Route all system traffic through Tor?\n\n" +
+					"Shared: your ISP sees that you are using Tor, and every " +
+					"site you reach sees a Tor exit address rather than yours.\n\n" +
+					"Dropped: all UDP except DNS, all ICMP, and IPv6 is " +
+					"rejected outright. QUIC, VPNs, VoIP, games, NTP clock " +
+					"sync and local network discovery stop working until this " +
+					"is switched back off.",
 			},
 			// Listed under both names because nixpkgs renamed the option and
 			// the unit with it. Whichever exists resolves; if both do, one is
@@ -104,6 +115,15 @@ func DefaultSecurity() Security {
 				Name:      "I2P",
 				Unit:      "i2pd.service",
 				StateFile: "/var/lib/netpala/i2pd",
+				Confirm: "Make this machine an I2P router?\n\n" +
+					"Shared: your IP address, which every I2P peer you " +
+					"connect to can see, and bandwidth and CPU spent " +
+					"relaying other users' traffic. Relaying is on by " +
+					"default - in I2P every router carries traffic, unlike " +
+					"Tor where that is a separate role.\n\n" +
+					"Not shared: any of your own data. What you relay is " +
+					"encrypted, you cannot read it, and it never leaves I2P " +
+					"for the clearnet. This is not an exit node.",
 			},
 		},
 	}

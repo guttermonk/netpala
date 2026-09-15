@@ -372,6 +372,50 @@ see `allowedUnits` in [`contrib/tor-transparent/`](contrib/tor-transparent/).
 Without one you get an error naming the missing rule instead of a silent
 failure.
 
+#### Asking before starting a service
+
+`confirm = "..."` puts the text in front of the user and waits for an answer
+before the unit is started. Empty means start it straight away. **Only starting
+is gated** — turning something off never asks, since a prompt between you and
+switching a thing back off is exactly the wrong place for one.
+
+It is free text in config rather than netpala recognising particular unit
+names: what is worth consenting to depends on how the service is configured on
+*your* machine, which netpala cannot infer.
+
+Tor and I2P ship with one by default, because both change what leaves the
+machine in ways you cannot see from the pane afterwards:
+
+```toml
+[[security.services]]
+name    = "I2P"
+unit    = "i2pd.service"
+confirm = """
+Make this machine an I2P router?
+
+Shared: your IP address, which every I2P peer you connect to can see, and \
+bandwidth and CPU spent relaying other users' traffic.
+
+Not shared: any of your own data. What you relay is encrypted, you cannot \
+read it, and it never leaves I2P for the clearnet. This is not an exit node.
+"""
+```
+
+The default I2P text is worth reading once even if you never change it. I2P is
+not Tor: every router relays, so enabling `i2pd` makes you a participant rather
+than a client — `notransit = false` and `transittunnels = 2500` are stock
+defaults. It is *not* an exit node, though; transit traffic never reaches the
+clearnet, so the liability reasoning people carry over from Tor exits does not
+apply.
+
+The Tor text names what stops working, which is the part that bites: the
+ruleset is fail-closed, so all UDP except DNS, all ICMP and IPv6 are dropped.
+QUIC, VPNs, VoIP, games, NTP clock sync and local network discovery go with
+them until it is switched off.
+
+DNSCrypt deliberately ships without one — it is low-stakes, and the DNS picker
+already guards the case that matters.
+
 #### DNS and the local resolver are kept in step
 
 `provides_dns = true` marks a unit that answers DNS on loopback. That unit and

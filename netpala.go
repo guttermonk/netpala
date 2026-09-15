@@ -15,6 +15,12 @@ import (
 	"go.dalton.dog/bubbleup"
 )
 
+// What an accepted confirmation popup carries out.
+const (
+	confirmDeleteNetwork = iota
+	confirmStartService
+)
+
 type NetpalaData struct {
 	Width, Height int
 	selectedBox   int
@@ -52,6 +58,13 @@ type NetpalaData struct {
 	// it. Set when the DNS picker is opened to choose a replacement resolver,
 	// cleared if that choice is cancelled.
 	pendingStopUnit string
+
+	// What the confirmation popup will do if accepted. One popup serves both
+	// deleting a network and starting a service that asks for consent, so the
+	// intent has to be recorded when it opens rather than inferred later.
+	confirmAction int
+	// Unit awaiting consent before being started, for confirmStartService.
+	pendingStartUnit string
 
 	// Which profile was live at the last refresh, so connecting to a network
 	// can be told apart from merely refreshing while already on it.
@@ -192,6 +205,47 @@ func (m NetpalaData) startDNSServiceCmd() tea.Cmd {
 		return nil
 	}
 	return dbus.ToggleSecurityServiceCmd(m.Conn, svc, m.Config.Security.Services)
+}
+
+// openStartConfirmation puts the service's consent text on screen and records
+// which unit is waiting on the answer.
+//
+// The unit is remembered by name rather than by index: refreshes rewrite
+// SecurityData while the popup is open, and a stale index would start whatever
+// happened to land in that row.
+func (m *NetpalaData) openStartConfirmation(svc common.SecurityService) {
+	m.PopupState = 1
+	m.confirmAction = confirmStartService
+	m.pendingStartUnit = svc.Unit
+	m.Confirmation = models.ModelConfirmation(m.Colors)
+	m.Confirmation.Message = svc.Confirm
+	m.Overlay = updateOverlayModel(*m, &m.Confirmation)
+}
+
+// toggleSecurityCmd starts or stops a unit, bringing the live connection's DNS
+// with it when the unit is the local resolver.
+func (m NetpalaData) toggleSecurityCmd(svc common.SecurityService) tea.Cmd {
+	toggle := dbus.ToggleSecurityServiceCmd(m.Conn, svc, m.Config.Security.Services)
+
+	// Switching the local resolver on should actually route queries to it,
+	// otherwise it sits there answering nobody. Sequenced so it is listening
+	// before resolv.conf changes.
+	if svc.ProvidesDNS && !svc.Active {
+		if setDns := m.setConnectedDNSCmd(); setDns != nil {
+			return tea.Sequence(toggle, setDns)
+		}
+	}
+	return toggle
+}
+
+// securityServiceByUnit finds a unit in the current pane data.
+func (m NetpalaData) securityServiceByUnit(unit string) (common.SecurityService, bool) {
+	for _, s := range m.SecurityData {
+		if s.Unit == unit {
+			return s, true
+		}
+	}
+	return common.SecurityService{}, false
 }
 
 // setConnectedDNSCmd points the live connection at the local resolver. Used
@@ -543,15 +597,31 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.PopupState = -1                                   // Exit popup
 			m.Confirmation = models.ModelConfirmation(m.Colors) // Reset
 
-			if msg.Value { // User confirmed
-				// Delete the known network
+			action := m.confirmAction
+			unit := m.pendingStartUnit
+			m.pendingStartUnit = ""
+
+			listen := dbus.WaitForDBusSignal(m.Conn, m.DBusSignals)
+			if !msg.Value { // User cancelled
+				return m, listen
+			}
+
+			switch action {
+			case confirmStartService:
+				// Re-read the unit rather than trusting what was on screen:
+				// a refresh may have landed, or it may have been started from
+				// systemctl while the prompt was up, in which case toggling
+				// now would stop the very thing being consented to.
+				svc, ok := m.securityServiceByUnit(unit)
+				if !ok || svc.Active {
+					return m, listen
+				}
+				return m, tea.Batch(m.toggleSecurityCmd(svc), listen)
+
+			default: // confirmDeleteNetwork
 				// NOTE: Ensure m.SelectedNetwork holds the correct data before entering state 1
 				deleteCmd := dbus.DeleteConnectionCmd(m.Conn, m.SelectedNetwork.Path)
-				// Return delete command AND re-arm listener
-				return m, tea.Batch(deleteCmd, dbus.WaitForDBusSignal(m.Conn, m.DBusSignals))
-			} else { // User cancelled
-				// Just return and re-arm listener
-				return m, dbus.WaitForDBusSignal(m.Conn, m.DBusSignals)
+				return m, tea.Batch(deleteCmd, listen)
 			}
 
 		default: // If it's not a SubmitConfirmationMsg...
@@ -839,18 +909,15 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 
-				toggle := dbus.ToggleSecurityServiceCmd(m.Conn, selectedSvc, m.Config.Security.Services)
-
-				// Switching the local resolver on should actually route
-				// queries to it, otherwise it sits there answering nobody.
-				// Sequenced so it is listening before resolv.conf changes.
-				if selectedSvc.ProvidesDNS && !selectedSvc.Active {
-					if setDns := m.setConnectedDNSCmd(); setDns != nil {
-						return m, tea.Sequence(toggle, setDns)
-					}
+				// Some services change what leaves the machine, which is not
+				// visible from the pane once they are running. Starting one
+				// asks first; stopping never does.
+				if !selectedSvc.Active && selectedSvc.Confirm != "" {
+					m.openStartConfirmation(selectedSvc)
+					return m, nil
 				}
 
-				return m, toggle
+				return m, m.toggleSecurityCmd(selectedSvc)
 			} else if m.selectedBox == common.PaneDevice && len(m.DeviceData) > 0 {
 				// Enable/Disable Wifi Card
 				return m, dbus.ToggleWifiCmd(m.Conn, !m.DeviceData[0].Powered)
@@ -869,6 +936,7 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Signal:   m.KnownNetworks[m.SelectedEntry].Signal,
 				}
 				m.PopupState = 1
+				m.confirmAction = confirmDeleteNetwork
 				m.Confirmation = models.ModelConfirmation(m.Colors)
 				m.Confirmation.Message = fmt.Sprintf("Are you sure you want to delete the known network '%s'?\n", m.SelectedNetwork.SSID)
 
