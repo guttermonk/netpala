@@ -5,7 +5,7 @@
 
 
 A lightweight (hopefully) terminal-friendly NetworkManager wrapper written in Go.
-It’s a clone of Impala, because Impala’s UI made a single majestic white tear roll down my leg.
+It’s a clone of Impala, whose interface was good enough to be worth having in Go.
 
 ---
 
@@ -159,7 +159,16 @@ I2P needs nothing netpala-specific — the Security pane is a generic systemd
 toggle and `i2pd.service` is in the default service list:
 
 ```nix
-services.i2pd.enable = true;
+services.i2pd = {
+  enable = true;
+  # How applications reach I2P. Off by default, so without it the daemon
+  # runs and nothing can use it.
+  proto.sam.enable = true;
+  # Web console on http://127.0.0.1:7070. Joining I2P takes minutes, and this
+  # is the only way to see whether tunnels are built rather than inferring it
+  # from an application that is silently getting nowhere.
+  proto.http.enable = true;
+};
 services.torTransparent.directUsers = [ "i2pd" ];
 ```
 
@@ -184,8 +193,19 @@ that matters; if it is anonymising what you do, I2P provides that itself.
 
 Note that I2P is an overlay for I2P-internal services rather than a
 general-purpose exit, so there is no transparent-proxy equivalent to the Tor
-setup. i2pd exposes an HTTP proxy on `127.0.0.1:4444` and SOCKS on `4447` for
-applications that opt in.
+setup. Applications opt in: a browser through the HTTP proxy on
+`127.0.0.1:4444` or SOCKS on `4447`, and anything needing its own tunnels —
+a BitTorrent client, say — through SAM on `7656`.
+
+Two things to expect. **Addresses have to be inside I2P**: a `.i2p` site, or a
+torrent whose swarm and tracker are on the network. A clearnet address will not
+resolve over I2P however the client is configured, because there is nothing
+there to reach. And it is **slow** — a high-latency overlay by design, fine for
+long-running transfers and frustrating if you expect clearnet speeds.
+
+If you have listed `i2pd.service` in `managedUnits`, remember it no longer
+starts at boot: turn it on in the Security pane and give it a few minutes to
+build tunnels before expecting anything to work.
 
 #### Development shell
 
