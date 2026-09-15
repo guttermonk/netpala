@@ -459,7 +459,29 @@ func (m NetpalaData) Init() tea.Cmd {
 	)
 }
 
+// Update forwards every message to the alert model before doing anything else,
+// then runs the real logic.
+//
+// The alert fade is driven by a 100ms tick that the alert model re-arms only
+// when it is handed one, so a branch that returns without forwarding stops the
+// fade for good - and nothing ever restarts it. Every popup did exactly that,
+// which meant the first picker a user opened left all later alerts stuck at
+// their initial dim blend, unreadable against the background.
 func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updatedAlert, alertCmd := m.Alert.Update(msg)
+	m.Alert = updatedAlert.(bubbleup.AlertModel)
+
+	next, cmd := m.update(msg)
+	if alertCmd == nil {
+		return next, cmd
+	}
+	if cmd == nil {
+		return next, alertCmd
+	}
+	return next, tea.Batch(cmd, alertCmd)
+}
+
+func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	// Data refreshes describe the world, not the popup, so they are applied
@@ -906,9 +928,8 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	var updatedAlert tea.Model
-	updatedAlert, cmd = m.Alert.Update(msg)
-	m.Alert = updatedAlert.(bubbleup.AlertModel)
+	// The alert model is fed at the top of Update, so there is nothing to do
+	// here but fall through.
 	return m, cmd
 }
 
