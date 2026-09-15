@@ -66,6 +66,11 @@ type SubmitDnsMsg struct {
 	// Custom holds the raw address list when ProviderID is "custom".
 	Custom string
 }
+type SubmitMacMsg struct {
+	ModeID string
+	// Explicit holds the typed address when ModeID is "explicit".
+	Explicit string
+}
 
 type Device struct {
 	Path         dbus.ObjectPath
@@ -91,6 +96,10 @@ type KnownNetwork struct {
 	Connected   bool
 	DNSMode     string
 	DNSServers  []string
+	// MACMode is the profile's MAC behaviour; MACAddress holds the literal
+	// address when the mode is explicit.
+	MACMode    string
+	MACAddress string
 }
 
 type ScannedNetwork struct {
