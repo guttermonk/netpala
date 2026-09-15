@@ -142,6 +142,7 @@ before trusting them. Copy that directory next to your `configuration.nix` and:
     allowedUnits = [
       "tor-transparent.service"
       "dnscrypt-proxy2.service"
+      "i2pd.service"
     ];
   };
 }
@@ -193,6 +194,7 @@ windowrule = float 1, match:title com.omarchy.netpala
 - a : Toggle auto-connect
 - h : Toggle hidden
 - d : Switch DNS provider
+- m : Switch MAC address mode
 
 ---
 
@@ -245,6 +247,41 @@ so a non-default listener is still recognised.
 
 ---
 
+### MAC Address Switcher
+
+Pressing `m` on a known network chooses what hardware address the interface
+presents when it joins:
+
+| Option | Behaviour |
+| --- | --- |
+| Default | whatever NetworkManager's global setting says |
+| Stable | derived from the network — same every time you rejoin, different per network |
+| Random | a fresh address on every connection |
+| Permanent | the real hardware address |
+| Explicit | an address you type |
+
+**Stable is usually the right choice.** Your MAC is a permanent hardware
+identifier broadcast to every access point you associate with, and no amount of
+DNS encryption or onion routing hides it — a network you have joined before
+recognises you, and networks can be correlated with each other. Stable breaks
+that correlation while keeping the address consistent per network, so captive
+portals and MAC allowlists carry on working. Random is stronger but re-triggers
+portal logins; permanent is what you want only where a network identifies you
+by address deliberately.
+
+The mode is shown in the MAC column of the Known Networks table. Changing it
+re-activates the connection, because the address is chosen when the interface
+associates.
+
+Explicit addresses are validated: a multicast address (odd first octet) is
+rejected, since an interface claiming one would not receive its own traffic.
+
+> **Scanning is separate.** This setting covers association only. Wi-Fi
+> scanning broadcasts an address too, controlled globally rather than per
+> network — on NixOS, `networking.networkmanager.wifi.scanRandMacAddress = true`.
+
+---
+
 ### Security Pane
 
 An optional pane listing systemd units, toggled with the select key like a VPN.
@@ -261,7 +298,11 @@ transparent Tor proxy, a local DNSCrypt daemon.
 ```
 
 **The pane hides itself when none of the configured units are installed**, so
-it costs nothing if you don't use it. State is read from systemd on every
+it costs nothing if you don't use it. I2P is listed by default too:
+`i2pd` needs no netpala-specific support - the pane is a generic systemd
+toggle, so any unit works. Note that I2P is an overlay network for I2P-internal
+services rather than a general-purpose exit, so there is no transparent-proxy
+equivalent to the Tor setup. State is read from systemd on every
 refresh rather than remembered, so a change made with `systemctl` shows up
 correctly — netpala reports what is true, not what it last asked for.
 

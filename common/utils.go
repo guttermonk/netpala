@@ -267,7 +267,7 @@ func FormatSecurityData(services []SecurityService) [][]string {
 
 func FormatKnownNetworksData(networks []KnownNetwork, selectedRow int, height int) [][]string {
 	base := [][]string{
-		padHeaders([]string{"", "Name", "Security", "DNS", "Hidden", "Auto-Connect", "Signal"}, []int{5, -1, 12, 11, 10, 14, 9}), {""},
+		padHeaders([]string{"", "Name", "Security", "DNS", "MAC", "Hidden", "Auto-Connect", "Signal"}, []int{5, -1, 11, 10, 10, 8, 13, 8}), {""},
 	}
 	window := FormatArrays(networks, selectedRow, height)
 	for _, n := range window {
@@ -275,7 +275,7 @@ func FormatKnownNetworksData(networks []KnownNetwork, selectedRow int, height in
 		if n.Connected {
 			connected = "  >  "
 		}
-		row := []string{connected, strings.TrimSpace(n.SSID), n.Security, DNSModeLabel(n.DNSMode), strconv.FormatBool(n.Hidden), strconv.FormatBool(n.AutoConnect), strconv.Itoa(n.Signal) + "%"}
+		row := []string{connected, strings.TrimSpace(n.SSID), n.Security, DNSModeLabel(n.DNSMode), MACModeLabel(n.MACMode), strconv.FormatBool(n.Hidden), strconv.FormatBool(n.AutoConnect), strconv.Itoa(n.Signal) + "%"}
 		for i := range row {
 			if len(row[i]) > lipgloss.Width(base[0][i]) {
 				row[i] = row[i][:max(0, lipgloss.Width(base[0][i])-3)] + "..."

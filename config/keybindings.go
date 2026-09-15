@@ -31,6 +31,7 @@ type KeyBindings struct {
 	ToggleAutoConnect KeyBinding `toml:"toggle_autoconnect"`
 	ToggleHidden      KeyBinding `toml:"toggle_hidden"`
 	SetDns            KeyBinding `toml:"set_dns"`
+	SetMac            KeyBinding `toml:"set_mac"`
 
 	// Application
 	Quit   KeyBinding `toml:"quit"`
@@ -40,14 +41,14 @@ type KeyBindings struct {
 // Colors holds all color configurations for the application
 type Colors struct {
 	// Primary colors
-	Primary       string `toml:"primary"`         // Default text and UI elements
-	Active        string `toml:"active"`          // Active/selected borders
-	ActiveText    string `toml:"active_text"`    // Active/selected text
-	SelectionBg   string `toml:"selection_bg"`    // Selection bar background
-	Inactive      string `toml:"inactive"`        // Inactive/dimmed elements
-	Error         string `toml:"error"`           // Error states
-	ErrorText     string `toml:"error_text"`     // Error text
-	HelpText      string `toml:"help_text"`      // Help text at bottom of window
+	Primary     string `toml:"primary"`      // Default text and UI elements
+	Active      string `toml:"active"`       // Active/selected borders
+	ActiveText  string `toml:"active_text"`  // Active/selected text
+	SelectionBg string `toml:"selection_bg"` // Selection bar background
+	Inactive    string `toml:"inactive"`     // Inactive/dimmed elements
+	Error       string `toml:"error"`        // Error states
+	ErrorText   string `toml:"error_text"`   // Error text
+	HelpText    string `toml:"help_text"`    // Help text at bottom of window
 }
 
 // DNS holds settings for the DNS provider switcher
@@ -84,6 +85,10 @@ func DefaultSecurity() Security {
 				Name:        "DNSCrypt",
 				Unit:        "dnscrypt-proxy2.service",
 				ProvidesDNS: true,
+			},
+			{
+				Name: "I2P",
+				Unit: "i2pd.service",
 			},
 		},
 	}
@@ -137,6 +142,10 @@ func DefaultKeyBindings() KeyBindings {
 			Keys: []string{"d"},
 			Help: "DNS",
 		},
+		SetMac: KeyBinding{
+			Keys: []string{"m"},
+			Help: "MAC",
+		},
 		Quit: KeyBinding{
 			Keys: []string{"q", "ctrl+c", "ctrl+q", "ctrl+w"},
 			Help: "Quit",
@@ -151,14 +160,14 @@ func DefaultKeyBindings() KeyBindings {
 // DefaultColors returns the default color configuration
 func DefaultColors() Colors {
 	return Colors{
-		Primary:    "#a7abca",  // Light blue-gray
-		Active:     "#9cca69",  // Green
-		ActiveText: "#cda162",  // Orange
+		Primary:     "#a7abca", // Light blue-gray
+		Active:      "#9cca69", // Green
+		ActiveText:  "#cda162", // Orange
 		SelectionBg: "#5a6988", // Darker blue-gray for better contrast
-		Inactive:   "#444a66",  // Dark gray
-		Error:      "#ff0000",  // Red
-		ErrorText:  "#aa0000",  // Dark red
-		HelpText:   "#a7abca",  // Help text at bottom (same as Primary by default)
+		Inactive:    "#444a66", // Dark gray
+		Error:       "#ff0000", // Red
+		ErrorText:   "#aa0000", // Dark red
+		HelpText:    "#a7abca", // Help text at bottom (same as Primary by default)
 	}
 }
 
@@ -294,6 +303,9 @@ func mergeWithDefaults(cfg Config) Config {
 	if len(cfg.KeyBindings.SetDns.Keys) == 0 {
 		cfg.KeyBindings.SetDns = defaults.SetDns
 	}
+	if len(cfg.KeyBindings.SetMac.Keys) == 0 {
+		cfg.KeyBindings.SetMac = defaults.SetMac
+	}
 	if len(cfg.KeyBindings.Quit.Keys) == 0 {
 		cfg.KeyBindings.Quit = defaults.Quit
 	}
@@ -331,6 +343,9 @@ func mergeWithDefaults(cfg Config) Config {
 	}
 	if cfg.KeyBindings.SetDns.Help == "" {
 		cfg.KeyBindings.SetDns.Help = defaults.SetDns.Help
+	}
+	if cfg.KeyBindings.SetMac.Help == "" {
+		cfg.KeyBindings.SetMac.Help = defaults.SetMac.Help
 	}
 	if cfg.KeyBindings.Quit.Help == "" {
 		cfg.KeyBindings.Quit.Help = defaults.Quit.Help
@@ -451,6 +466,7 @@ type AppKeyMap struct {
 	ToggleAutoConnect key.Binding
 	ToggleHidden      key.Binding
 	SetDns            key.Binding
+	SetMac            key.Binding
 	Quit              key.Binding
 	Cancel            key.Binding
 }
@@ -468,6 +484,7 @@ func NewAppKeyMap(cfg *Config) AppKeyMap {
 		ToggleAutoConnect: cfg.KeyBindings.ToggleAutoConnect.ToKeyBinding(),
 		ToggleHidden:      cfg.KeyBindings.ToggleHidden.ToKeyBinding(),
 		SetDns:            cfg.KeyBindings.SetDns.ToKeyBinding(),
+		SetMac:            cfg.KeyBindings.SetMac.ToKeyBinding(),
 		Quit:              cfg.KeyBindings.Quit.ToKeyBinding(),
 		Cancel:            cfg.KeyBindings.Cancel.ToKeyBinding(),
 	}
@@ -493,7 +510,7 @@ func (k AppKeyMap) PaneHelp(pane int) []key.Binding {
 	case common.PaneKnown:
 		return []key.Binding{
 			k.Up, k.Down, k.Select, k.Remove, k.Scan,
-			k.ToggleAutoConnect, k.ToggleHidden, k.SetDns,
+			k.ToggleAutoConnect, k.ToggleHidden, k.SetDns, k.SetMac,
 			k.NextPane, k.PrevPane, k.Quit,
 		}
 	case common.PaneScanned:

@@ -304,6 +304,95 @@ func cleanSettingsForUpdate(settings map[string]map[string]dbus.Variant) {
 	}
 }
 
+// SetMacCmd rewrites a saved connection's MAC behaviour.
+//
+// Like the DNS switcher this re-activates the live connection, but here it is
+// not optional: the address is chosen when the interface associates, so
+// without a reconnect the change would not take effect until next time.
+func SetMacCmd(
+	conn *dbus.Conn,
+	connectionPath dbus.ObjectPath,
+	devicePath dbus.ObjectPath,
+	mode, explicit string,
+	reactivate bool,
+) tea.Cmd {
+	return func() tea.Msg {
+		connObj := conn.Object(network.NMDest, connectionPath)
+
+		var settings map[string]map[string]dbus.Variant
+		call := connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.GetSettings", 0)
+		if call.Err != nil {
+			return common.ErrMsg{Err: fmt.Errorf("failed to get connection settings: %w", call.Err)}
+		}
+		if err := call.Store(&settings); err != nil {
+			return common.ErrMsg{Err: fmt.Errorf("failed to parse connection settings: %w", err)}
+		}
+
+		cleanSettingsForUpdate(settings)
+
+		if err := applyMACToSettings(settings, mode, explicit); err != nil {
+			return common.ErrMsg{Err: err}
+		}
+
+		call = connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.Update", 0, settings)
+		if call.Err != nil {
+			return common.ErrMsg{Err: fmt.Errorf("failed to update MAC settings: %w", call.Err)}
+		}
+
+		var cmds []tea.Cmd
+		if reactivate && devicePath != "" && devicePath != "/" {
+			cmds = append(cmds, ConnectToNetworkCmd(conn, connectionPath, devicePath))
+		}
+		cmds = append(cmds, func() tea.Msg {
+			return common.KnownNetworksUpdateMsg(network.GetKnownNetworks(conn))
+		})
+		// BatchMsg, not Batch: this is returned as a Msg, and the runtime only
+		// dispatches BatchMsg. Returning a Cmd here silently drops it.
+		return tea.BatchMsg(cmds)
+	}
+}
+
+// applyMACToSettings writes the chosen MAC behaviour into a connection's
+// settings.
+//
+// The keywords live in the string property "assigned-mac-address". Two legacy
+// properties shadow it and are cleared here rather than left behind: the
+// "cloned-mac-address" byte array, which NetworkManager still populates when
+// an explicit address is set, and "mac-address-randomization", which nmcli
+// sets alongside the keywords. Leaving either in place means a profile that
+// once had an explicit address keeps carrying it.
+//
+// Clearing is done by writing an empty value, not by deleting the key:
+// NetworkManager keeps the stored value for a property an update does not
+// mention, which is what made the DNS switcher's "DHCP" option do nothing.
+func applyMACToSettings(settings map[string]map[string]dbus.Variant, mode, explicit string) error {
+	if settings[network.WirelessSetting] == nil {
+		return fmt.Errorf("not a wireless connection")
+	}
+	w := settings[network.WirelessSetting]
+
+	value := mode
+	if mode == common.MACModeExplicit {
+		addr, err := common.ParseMAC(explicit)
+		if err != nil {
+			return err
+		}
+		value = addr
+	}
+
+	// The two names are alternative D-Bus spellings of one NetworkManager
+	// property, not independent fields. Sending both makes the legacy byte
+	// array win, which silently discards the keyword - so it is removed from
+	// the map and only the string form is written.
+	delete(w, network.ClonedMACKey)
+	w[network.AssignedMACKey] = dbus.MakeVariant(value)
+
+	// The older randomization flag shadows the keyword when set, so clear it
+	// back to "default" rather than leaving a contradictory pair behind.
+	w[network.MACRandomizationKey] = dbus.MakeVariant(uint32(0))
+	return nil
+}
+
 // applyDNSToSettings writes the chosen provider into a connection's settings.
 //
 // Kept separate from the D-Bus round trip so these rules can be tested

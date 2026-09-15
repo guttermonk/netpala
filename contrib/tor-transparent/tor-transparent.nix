@@ -80,6 +80,7 @@ in
       default = [
         "tor-transparent.service"
         "dnscrypt-proxy2.service"
+        "i2pd.service"
       ];
       description = ''
         Units that {option}`services.torTransparent.allowedGroup` may start and

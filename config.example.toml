@@ -60,6 +60,11 @@ help = "Hidden"
 keys = ["d"]
 help = "DNS"
 
+# Actions - Open the MAC address switcher for a known network
+[keybindings.set_mac]
+keys = ["m"]
+help = "MAC"
+
 # Application - Quit the application
 [keybindings.quit]
 keys = ["q", "ctrl+c", "ctrl+q", "ctrl+w"]
@@ -106,6 +111,10 @@ state_file = "/var/lib/netpala/tor"
 name = "DNSCrypt"
 unit = "dnscrypt-proxy2.service"
 provides_dns = true
+
+[[security.services]]
+name = "I2P"
+unit = "i2pd.service"
 
 # Color Configuration
 # 

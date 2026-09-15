@@ -39,9 +39,11 @@ type NetpalaData struct {
 	Confirmation models.Confirmation
 	PasswordForm models.PasswordInput
 	DnsForm      models.DnsSelect
+	MacForm      models.MacSelect
 
 	SelectedNetwork common.ScannedNetwork
 	DnsTarget       common.KnownNetwork
+	MacTarget       common.KnownNetwork
 
 	// Unit waiting to be stopped once the live connection has been moved off
 	// it. Set when the DNS picker is opened to choose a replacement resolver,
@@ -52,7 +54,7 @@ type NetpalaData struct {
 	// can be told apart from merely refreshing while already on it.
 	lastConnectedPath godbus.ObjectPath
 	connectionTracked bool
-	PopupState        int // -1: no popup, 0: form, 1: confirm, 2: password, 3: dns
+	PopupState        int // -1: none, 0: eap, 1: confirm, 2: password, 3: dns, 4: mac
 
 	Alert               bubbleup.AlertModel
 	InitialLoadComplete bool
@@ -422,6 +424,7 @@ func NetpalaModel() NetpalaData {
 		PasswordForm: models.ModelPasswordInput(cfg.Colors),
 		Form:         models.ModelWpaEapForm(cfg.Colors),
 		DnsForm:      models.ModelDnsSelect(cfg.Colors, cfg.DNS.DnscryptAddresses),
+		MacForm:      models.ModelMacSelect(cfg.Colors),
 		Overlay: overlay.Model{
 			XPosition: overlay.Left,
 			YPosition: overlay.Center,
@@ -638,6 +641,34 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.DnsForm = newDnsForm.(models.DnsSelect)
 			return m, cmd
 		}
+	case 4:
+		// Handle the MAC address picker
+		switch msg := msg.(type) {
+		case common.ExitFormMsg:
+			m.PopupState = -1
+			m.MacForm = models.ModelMacSelect(m.Colors)
+			return m, nil
+
+		case common.SubmitMacMsg:
+			m.PopupState = -1
+			target := m.MacTarget
+			m.MacForm = models.ModelMacSelect(m.Colors)
+
+			// The address is chosen when the interface associates, so the
+			// connection has to be rebuilt for a change to take effect.
+			devicePath := godbus.ObjectPath("/")
+			if target.Connected && len(m.DeviceData) > 0 {
+				devicePath = m.DeviceData[0].Path
+			}
+			return m, dbus.SetMacCmd(m.Conn, target.Path, devicePath,
+				msg.ModeID, msg.Explicit, target.Connected)
+
+		default:
+			var newMacForm tea.Model
+			newMacForm, cmd = m.MacForm.Update(msg)
+			m.MacForm = newMacForm.(models.MacSelect)
+			return m, cmd
+		}
 	}
 
 	switch msg := msg.(type) {
@@ -849,6 +880,21 @@ func (m NetpalaData) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, probeCmd
 			}
 		}
+
+		// MAC address switcher (only for known networks)
+		if m.Config.KeyBindings.SetMac.Matches(keyStr) {
+			if m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0 {
+				m.MacTarget = m.KnownNetworks[m.SelectedEntry]
+
+				m.MacForm = models.ModelMacSelect(m.Colors)
+				m.MacForm.SSID = m.MacTarget.SSID
+				m.MacForm.SelectMode(m.MacTarget.MACMode, m.MacTarget.MACAddress)
+
+				m.PopupState = 4
+				m.Overlay = updateOverlayModel(m, &m.MacForm)
+				return m, nil
+			}
+		}
 	}
 
 	var updatedAlert tea.Model
@@ -895,6 +941,9 @@ func (m NetpalaData) View() string {
 		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
 	case 3:
 		m.Overlay = updateOverlayModel(m, &m.DnsForm)
+		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
+	case 4:
+		m.Overlay = updateOverlayModel(m, &m.MacForm)
 		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
 	default:
 		return m.Alert.Render(m.Tables.View() + m.StatusBar.View())
