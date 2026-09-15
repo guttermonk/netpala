@@ -43,7 +43,7 @@ var MACOptions = []MACOption{
 	{
 		ID:    MACModeStable,
 		Label: "Stable",
-		Desc:  "same per network, unlinkable across them",
+		Desc:  "same each time, per network",
 	},
 	{
 		ID:    MACModeRandom,
@@ -116,4 +116,33 @@ func ParseMAC(s string) (string, error) {
 		return "", fmt.Errorf("%s is a multicast address; the first octet must be even", hw)
 	}
 	return hw.String(), nil
+}
+
+// MACOptionsFor returns the option list with "Default" described by what
+// NetworkManager is actually configured to do.
+//
+// "Default" writes nothing to the profile, so it means whatever the
+// wifi.cloned-mac-address global default says - which is invisible from inside
+// netpala and is the only thing separating it from "Permanent" on a machine
+// where that global is set to permanent. Naming the value makes the two rows
+// distinguishable instead of mysteriously identical.
+//
+// nmDefault of "" means the setting could not be read, in which case the
+// vaguer wording stands rather than claiming a default that was not verified.
+func MACOptionsFor(nmDefault string) []MACOption {
+	// Copy: the package-level table is shared, and a caller must not be able
+	// to rewrite the description everyone else sees.
+	out := make([]MACOption, len(MACOptions))
+	copy(out, MACOptions)
+
+	if nmDefault == "" {
+		return out
+	}
+	for i := range out {
+		if out[i].ID == MACModeDefault {
+			out[i].Desc = "NetworkManager's: " + nmDefault
+			break
+		}
+	}
+	return out
 }

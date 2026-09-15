@@ -72,6 +72,21 @@ type SubmitMacMsg struct {
 	Explicit string
 }
 
+// MacRevertedMsg reports that a MAC change was rejected after the profile had
+// already been written, and that netpala has put the previous setting back.
+//
+// Writing the profile always succeeds - it is only a string in a settings map
+// - and ActivateConnection returns as soon as the request is queued. A driver
+// that will not take a new hardware address fails later, inside the device
+// state machine, so without watching for this a rejected MAC looks exactly
+// like success while the link stays down.
+type MacRevertedMsg struct {
+	Iface     string // the device that would not take the address
+	Attempted string // the mode that was asked for
+	PrevMode  string // the mode restored in its place
+	Restored  bool   // whether reconnecting on the old mode worked
+}
+
 type Device struct {
 	Path         dbus.ObjectPath
 	Name         string
