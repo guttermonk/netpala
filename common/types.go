@@ -138,6 +138,16 @@ type SecurityServiceConfig struct {
 	// while a network profile resolves via loopback takes out name resolution
 	// entirely, so netpala asks for confirmation first.
 	ProvidesDNS bool `toml:"provides_dns"`
+	// Confirm, when set, is shown and must be accepted before this unit is
+	// started. Empty means start it straight away.
+	//
+	// Deliberately free text in config rather than netpala recognising
+	// particular unit names: what is worth consenting to depends on how the
+	// service is configured on this machine, which netpala cannot infer, and
+	// the wording should belong to whoever set it up.
+	//
+	// Only start is gated. Turning something off needs no consent.
+	Confirm string `toml:"confirm"`
 }
 
 // SecurityService is the live state of one such unit, read from systemd
@@ -147,9 +157,11 @@ type SecurityService struct {
 	Unit        string
 	StateFile   string
 	ProvidesDNS bool
-	Active      bool   // ActiveState == "active"
-	State       string // ActiveState verbatim: active, inactive, failed, activating
-	SubState    string
+	// Confirm is the consent text from config; empty means start without asking.
+	Confirm  string
+	Active   bool   // ActiveState == "active"
+	State    string // ActiveState verbatim: active, inactive, failed, activating
+	SubState string
 }
 
 type VpnConnection struct {

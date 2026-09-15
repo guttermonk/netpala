@@ -81,6 +81,7 @@ func GetSecurityServices(conn *dbus.Conn, configured []common.SecurityServiceCon
 			Unit:        unitName,
 			StateFile:   c.StateFile,
 			ProvidesDNS: c.ProvidesDNS,
+			Confirm:     c.Confirm,
 			Active:      activeState == "active",
 			State:       activeState,
 			SubState:    subState,
