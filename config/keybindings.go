@@ -76,19 +76,34 @@ type Config struct {
 func DefaultSecurity() Security {
 	return Security{
 		Services: []common.SecurityServiceConfig{
+			// StateFile records the last on/off choice so a boot-time unit can
+			// replay it. The paths match what the contrib NixOS module derives
+			// from the unit name; if the two disagree the choice is written
+			// and then never read, and the service quietly reverts on reboot.
 			{
 				Name:      "Tor",
 				Unit:      "tor-transparent.service",
-				StateFile: "/var/lib/netpala/tor",
+				StateFile: "/var/lib/netpala/tor-transparent",
+			},
+			// Listed under both names because nixpkgs renamed the option and
+			// the unit with it. Whichever exists resolves; if both do, one is
+			// an alias of the other and the duplicate is dropped.
+			{
+				Name:        "DNSCrypt",
+				Unit:        "dnscrypt-proxy.service",
+				StateFile:   "/var/lib/netpala/dnscrypt-proxy",
+				ProvidesDNS: true,
 			},
 			{
 				Name:        "DNSCrypt",
 				Unit:        "dnscrypt-proxy2.service",
+				StateFile:   "/var/lib/netpala/dnscrypt-proxy2",
 				ProvidesDNS: true,
 			},
 			{
-				Name: "I2P",
-				Unit: "i2pd.service",
+				Name:      "I2P",
+				Unit:      "i2pd.service",
+				StateFile: "/var/lib/netpala/i2pd",
 			},
 		},
 	}

@@ -114,13 +114,63 @@ in
       description = "Group permitted to toggle the units without a password prompt.";
     };
 
+    managedUnits = lib.mkOption {
+      type = lib.types.listOf (
+        lib.types.submodule (
+          { config, ... }:
+          {
+            options = {
+              unit = lib.mkOption {
+                type = lib.types.str;
+                example = "i2pd.service";
+                description = "The systemd unit netpala toggles.";
+              };
+              stateFile = lib.mkOption {
+                type = lib.types.str;
+                defaultText = lib.literalMD "`/var/lib/netpala/<unit>`";
+                default = "/var/lib/netpala/${lib.removeSuffix ".service" config.unit}";
+                description = ''
+                  Where the last on/off choice is recorded. Must match the
+                  `state_file` for this unit in netpala's `config.toml`.
+                '';
+              };
+              startByDefault = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = ''
+                  What to do on a boot where no choice has been recorded yet,
+                  before netpala has ever toggled this unit.
+                '';
+              };
+            };
+          }
+        )
+      );
+      default = [ ];
+      example = lib.literalExpression ''
+        [
+          { unit = "tor-transparent.service"; }
+          { unit = "dnscrypt-proxy2.service"; startByDefault = true; }
+          { unit = "i2pd.service"; }
+        ]
+      '';
+      description = ''
+        Units whose on/off state netpala owns across reboots.
+
+        Each listed unit is taken out of {file}`multi-user.target`, so it no
+        longer starts merely because it is enabled, and is started at boot only
+        when its state file says it was on. That is what makes "I turned this
+        off" survive a reboot; without it a stopped unit simply comes back.
+
+        The units are also permitted in the polkit rule, so
+        {option}`allowedUnits` does not need to repeat them.
+      '';
+    };
+
     allowedUnits = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [
-        "tor-transparent.service"
-        "dnscrypt-proxy2.service"
-        "i2pd.service"
-      ];
+      defaultText = lib.literalMD "the units named in {option}`managedUnits`";
+      default = map (m: m.unit) cfg.managedUnits;
       description = ''
         Units that {option}`services.torTransparent.allowedGroup` may start and
         stop without authenticating. This is the entire privilege surface
@@ -175,41 +225,58 @@ in
       "d /var/lib/netpala 0775 root ${cfg.allowedGroup} -"
     ];
 
-    # The switch itself.
-    systemd.services.tor-transparent = {
-      description = "Transparent Tor proxying (nftables)";
-      documentation = [ "file://${ruleset}" ];
+    systemd.services = lib.mkMerge (
+      [
+        # The switch itself.
+        {
+          tor-transparent = {
+            description = "Transparent Tor proxying (nftables)";
+            documentation = [ "file://${ruleset}" ];
 
-      # Ordering only. Deliberately NOT `requires`: if tor dies we want the
-      # rules to stay up and keep dropping, not unload and start leaking.
-      after = [ "tor.service" "network.target" ];
-      wants = [ "tor.service" ];
+            # Ordering only. Deliberately NOT `requires`: if tor dies we want
+            # the rules to stay up and keep dropping, not unload and leak.
+            after = [ "tor.service" "network.target" ];
+            wants = [ "tor.service" ];
 
-      # No wantedBy: dormant until something starts it.
+            # No wantedBy: dormant until something starts it.
 
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = "${bringup}";
-        ExecStop = "${teardown}";
-      };
-    };
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = "${bringup}";
+              ExecStop = "${teardown}";
+            };
+          };
+        }
 
-    systemd.services.tor-transparent-restore = lib.mkIf cfg.persistAcrossReboots {
-      description = "Replay the last Tor transparent-proxy choice";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "tor.service" "network-online.target" ];
-      wants = [ "network-online.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-      };
-      script = ''
-        if [ "$(cat ${cfg.stateFile} 2>/dev/null || echo off)" = "on" ]; then
-          systemctl start tor-transparent.service
-        fi
-      '';
-    };
+        (lib.mkIf (cfg.persistAcrossReboots && cfg.managedUnits != [ ]) {
+          netpala-restore = {
+            description = "Replay the last on/off choice for netpala-managed units";
+            wantedBy = [ "multi-user.target" ];
+            after = [ "network-online.target" ];
+            wants = [ "network-online.target" ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+            };
+            # One unit failing to start must not abandon the rest, so each
+            # start is allowed to fail on its own.
+            script = lib.concatMapStrings (m: ''
+              want=$(cat ${m.stateFile} 2>/dev/null || echo ${if m.startByDefault then "on" else "off"})
+              if [ "$want" = "on" ]; then
+                echo "netpala: restoring ${m.unit}"
+                systemctl start ${m.unit} || echo "netpala: ${m.unit} failed to start"
+              fi
+            '') cfg.managedUnits;
+          };
+        })
+      ]
+      # Managed units are started by the restore service rather than by being
+      # enabled; otherwise an "off" choice would be undone at every boot.
+      ++ map (m: {
+        ${lib.removeSuffix ".service" m.unit}.wantedBy = lib.mkForce [ ];
+      }) cfg.managedUnits
+    );
 
     # Scoped to a fixed list of units and one group. This is the entire
     # privilege surface netpala gains -- it cannot manage anything else.

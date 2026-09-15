@@ -310,6 +310,12 @@ associates.
 Explicit addresses are validated: a multicast address (odd first octet) is
 rejected, since an interface claiming one would not receive its own traffic.
 
+> **Your adapter has to support it.** Some drivers - Broadcom `wl` among
+> them - advertise no MAC randomisation, and NetworkManager's attempts to set
+> the address fail in the driver. Check with `iw list | grep -i randomis`
+> before relying on Stable or Random; where it is unsupported, Permanent is
+> the only mode that behaves.
+
 > **Scanning is separate.** This setting covers association only. Wi-Fi
 > scanning broadcasts an address too, controlled globally rather than per
 > network — on NixOS, `networking.networkmanager.wifi.scanRandMacAddress = true`.
@@ -375,6 +381,42 @@ Cancelling abandons the stop and leaves the resolver up. Choosing DNSCrypt in
 that popup reads as "actually, keep it" and also abandons the stop. Saved
 networks that aren't connected need no warning at all — their resolver is
 started again when you connect to them.
+
+#### Keeping a service off across reboots
+
+By default the daemons run continuously and netpala toggles only the routing.
+If you would rather netpala own whether they run at all — off at home for the
+speed, on when travelling — list them as `managedUnits`:
+
+```nix
+services.torTransparent.managedUnits = [
+  { unit = "tor-transparent.service"; }
+  { unit = "dnscrypt-proxy.service"; }
+  { unit = "i2pd.service"; }
+];
+```
+
+Each listed unit is taken out of `multi-user.target`, so it no longer starts
+merely because it is enabled, and is started at boot only when its state file
+says it was on. Without that, stopping a service lasts until the next reboot
+and no longer. `allowedUnits` is derived from this list, so the polkit rule
+does not need to repeat it.
+
+**Use canonical unit names.** A renamed unit keeps its old name as an alias,
+and the two are not interchangeable here: overriding the alias defines a
+second, unrelated unit while the real one carries on starting at boot. netpala
+resolves aliases to the canonical name via systemd's `Id`, so its own config
+may use either, but Nix cannot.
+
+> **If you manage the DNS daemon, clear `networking.nameservers`.** The
+> dnscrypt module points it at `127.0.0.1`, which outranks NetworkManager in
+> resolvconf. With the daemon toggled off, resolv.conf would still name a dead
+> resolver and there would be no DNS at boot:
+> ```nix
+> networking.nameservers = lib.mkForce [ ];
+> ```
+> That hands DNS back to NetworkManager, so netpala's per-network setting
+> decides — and turning the resolver off moves the profile with it.
 
 `state_file` records the choice so a boot-time unit can replay it. This is
 necessary because NixOS cannot use `systemctl enable` — `/etc/systemd/system`
