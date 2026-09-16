@@ -20,6 +20,7 @@ const (
 	confirmDeleteNetwork = iota
 	confirmStartService
 	confirmDeleteVpn
+	confirmApplyResolver
 )
 
 type NetpalaData struct {
@@ -47,6 +48,7 @@ type NetpalaData struct {
 	PasswordForm models.PasswordInput
 	DnsForm      models.DnsSelect
 	MacForm      models.MacSelect
+	VpnForm      models.VpnImport
 
 	SelectedNetwork common.ScannedNetwork
 	DnsTarget       common.KnownNetwork
@@ -76,7 +78,7 @@ type NetpalaData struct {
 	// can be told apart from merely refreshing while already on it.
 	lastConnectedPath godbus.ObjectPath
 	connectionTracked bool
-	PopupState        int // -1: none, 0: eap, 1: confirm, 2: password, 3: dns, 4: mac
+	PopupState        int // -1: none, 0: eap, 1: confirm, 2: password, 3: dns, 4: mac, 5: vpn import
 
 	Alert               bubbleup.AlertModel
 	InitialLoadComplete bool
@@ -228,6 +230,16 @@ func (m *NetpalaData) openStartConfirmation(svc common.SecurityService) {
 	m.Overlay = updateOverlayModel(*m, &m.Confirmation)
 }
 
+// vpnNameTaken reports whether a VPN profile of this name already exists.
+func (m NetpalaData) vpnNameTaken(id string) bool {
+	for _, v := range m.VpnData {
+		if v.Name == id {
+			return true
+		}
+	}
+	return false
+}
+
 // openDeleteVpnConfirmation asks before removing a saved VPN profile.
 //
 // Always asks, unlike the Security pane's start-only gate: deleting is not a
@@ -249,20 +261,68 @@ func (m *NetpalaData) openDeleteVpnConfirmation(vpn common.VpnConnection) {
 	m.Overlay = updateOverlayModel(*m, &m.Confirmation)
 }
 
-// toggleSecurityCmd starts or stops a unit, bringing the live connection's DNS
-// with it when the unit is the local resolver.
+// toggleSecurityCmd starts or stops a unit, and nothing else.
 func (m NetpalaData) toggleSecurityCmd(svc common.SecurityService) tea.Cmd {
-	toggle := dbus.ToggleSecurityServiceCmd(m.Conn, svc, m.Config.Security.Services)
+	return dbus.ToggleSecurityServiceCmd(m.Conn, svc, m.Config.Security.Services)
+}
 
-	// Switching the local resolver on should actually route queries to it,
-	// otherwise it sits there answering nobody. Sequenced so it is listening
-	// before resolv.conf changes.
-	if svc.ProvidesDNS && !svc.Active {
-		if setDns := m.setConnectedDNSCmd(); setDns != nil {
-			return tea.Sequence(toggle, setDns)
-		}
+// toggleSecurityWithResolverCmd starts the local resolver and points the live
+// connection at it.
+//
+// Sequenced rather than batched: the resolver has to be listening before
+// resolv.conf starts naming it, or there is a window where every lookup on the
+// machine goes to a port with nothing behind it.
+func (m NetpalaData) toggleSecurityWithResolverCmd(svc common.SecurityService) tea.Cmd {
+	toggle := m.toggleSecurityCmd(svc)
+	setDns := m.setConnectedDNSCmd()
+	if setDns == nil {
+		return toggle
 	}
-	return toggle
+	return tea.Sequence(toggle, setDns)
+}
+
+// shouldAskApplyResolver reports whether starting this unit raises a question
+// worth putting to the user: it answers DNS, and the live connection is not
+// pointed at it yet.
+func (m NetpalaData) shouldAskApplyResolver(svc common.SecurityService) bool {
+	if !svc.ProvidesDNS || svc.Active {
+		return false
+	}
+	// setConnectedDNSCmd is nil when there is nothing connected, or when the
+	// connection already resolves through it -- in both cases there is nothing
+	// to decide.
+	return m.setConnectedDNSCmd() != nil
+}
+
+// openApplyResolverConfirmation asks whether the live connection should start
+// resolving through the local resolver being switched on.
+//
+// Netpala used to do this without asking, on the reasoning that a resolver
+// answering nobody is pointless. But it rewrites the network profile and moves
+// every lookup on the machine, which is a larger thing than "start a service"
+// and not what the keypress said it would do. Asking also leaves room for the
+// legitimate answer of running the resolver for something else to use.
+//
+// Declining still starts the unit. The question is only about DNS.
+func (m *NetpalaData) openApplyResolverConfirmation(svc common.SecurityService) {
+	ssid := ""
+	if current, ok := m.connectedNetwork(); ok {
+		ssid = current.SSID
+	}
+
+	m.PopupState = 1
+	m.confirmAction = confirmApplyResolver
+	m.pendingStartUnit = svc.Unit
+	m.Confirmation = models.ModelConfirmation(m.Colors)
+	m.Confirmation.Message = fmt.Sprintf(
+		"Resolve %s through %s?\n\n"+
+			"%s is starting either way. This is only about whether "+
+			"this machine's DNS queries are sent to it.\n\n"+
+			"Declining leaves DNS as it is; you can switch the network over "+
+			"later with the DNS key.\n",
+		ssid, svc.Name, svc.Name)
+
+	m.Overlay = updateOverlayModel(*m, &m.Confirmation)
 }
 
 // securityServiceByUnit finds a unit in the current pane data.
@@ -515,6 +575,7 @@ func NetpalaModel() NetpalaData {
 		Form:         models.ModelWpaEapForm(cfg.Colors),
 		DnsForm:      models.ModelDnsSelect(cfg.Colors, cfg.KeyBindings, cfg.DNS.DnscryptAddresses),
 		MacForm:      models.ModelMacSelect(cfg.Colors, cfg.KeyBindings, nmMacDefault),
+		VpnForm:      models.ModelVpnImport(cfg.Colors, cfg.KeyBindings),
 		Overlay: overlay.Model{
 			XPosition: overlay.Left,
 			YPosition: overlay.Center,
@@ -629,6 +690,21 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingStartUnit = ""
 
 			listen := dbus.WaitForDBusSignal(m.Conn, m.DBusSignals)
+
+			// Declining this one is an answer rather than an abort: the unit
+			// starts either way, and "no" only means DNS stays where it is.
+			// Handled before the general cancel path for that reason.
+			if action == confirmApplyResolver {
+				svc, ok := m.securityServiceByUnit(unit)
+				if !ok || svc.Active {
+					return m, listen
+				}
+				if msg.Value {
+					return m, tea.Batch(m.toggleSecurityWithResolverCmd(svc), listen)
+				}
+				return m, tea.Batch(m.toggleSecurityCmd(svc), listen)
+			}
+
 			if !msg.Value { // User cancelled
 				return m, listen
 			}
@@ -641,6 +717,14 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// now would stop the very thing being consented to.
 				svc, ok := m.securityServiceByUnit(unit)
 				if !ok || svc.Active {
+					return m, listen
+				}
+				// Consent covered starting it. If it also answers DNS, whether
+				// this machine should resolve through it is a second question,
+				// so it gets a second prompt rather than being folded into the
+				// first one's "yes".
+				if m.shouldAskApplyResolver(svc) {
+					m.openApplyResolverConfirmation(svc)
 					return m, listen
 				}
 				return m, tea.Batch(m.toggleSecurityCmd(svc), listen)
@@ -805,6 +889,36 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.MacForm = newMacForm.(models.MacSelect)
 			return m, cmd
 		}
+	case 5:
+		// Handle the WireGuard import popup
+		switch msg := msg.(type) {
+		case common.ExitFormMsg:
+			m.PopupState = -1
+			m.VpnForm = models.ModelVpnImport(m.Colors, m.Config.KeyBindings)
+			return m, nil
+
+		case common.SubmitVpnImportMsg:
+			m.PopupState = -1
+			m.VpnForm = models.ModelVpnImport(m.Colors, m.Config.KeyBindings)
+
+			// The name is already taken by another profile. NetworkManager
+			// would accept the duplicate and leave two identical-looking rows
+			// fighting over one interface, so refuse it here where the reason
+			// can still be explained.
+			if m.vpnNameTaken(msg.ID) {
+				return m, func() tea.Msg {
+					return common.ErrMsg{Err: fmt.Errorf(
+						"a VPN connection called %q already exists; rename the file or delete that profile first", msg.ID)}
+				}
+			}
+			return m, dbus.AddWireGuardCmd(m.Conn, msg.Config, msg.ID, msg.Ifname)
+
+		default:
+			var newVpnForm tea.Model
+			newVpnForm, cmd = m.VpnForm.Update(msg)
+			m.VpnForm = newVpnForm.(models.VpnImport)
+			return m, cmd
+		}
 	}
 
 	switch msg := msg.(type) {
@@ -952,6 +1066,14 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 
+				// Starting the local resolver can also move every DNS query on
+				// the machine. That is a bigger thing than the keypress said,
+				// so it is asked rather than assumed.
+				if m.shouldAskApplyResolver(selectedSvc) {
+					m.openApplyResolverConfirmation(selectedSvc)
+					return m, nil
+				}
+
 				return m, m.toggleSecurityCmd(selectedSvc)
 			} else if m.selectedBox == common.PaneDevice && len(m.DeviceData) > 0 {
 				// Enable/Disable Wifi Card
@@ -1021,6 +1143,16 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Import a WireGuard config. Works from any pane on purpose: the VPN
+		// pane hides itself while it is empty, which is exactly the situation
+		// someone importing their first tunnel is in.
+		if m.Config.KeyBindings.ImportVpn.Matches(keyStr) {
+			m.VpnForm = models.ModelVpnImport(m.Colors, m.Config.KeyBindings)
+			m.PopupState = 5
+			m.Overlay = updateOverlayModel(m, &m.VpnForm)
+			return m, m.VpnForm.Init()
+		}
+
 		// MAC address switcher (only for known networks)
 		if m.Config.KeyBindings.SetMac.Matches(keyStr) {
 			if m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0 {
@@ -1083,6 +1215,9 @@ func (m NetpalaData) View() string {
 		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
 	case 4:
 		m.Overlay = updateOverlayModel(m, &m.MacForm)
+		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
+	case 5:
+		m.Overlay = updateOverlayModel(m, &m.VpnForm)
 		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
 	default:
 		return m.Alert.Render(m.Tables.View() + m.StatusBar.View())
