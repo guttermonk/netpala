@@ -239,7 +239,12 @@ windowrule = float 1, match:title com.omarchy.netpala
 - j / Down : Scroll down
 - k / Up : Scroll up
 - s : Force scan
+- i : Import a WireGuard config
 - q / Ctrl+C: Quit
+
+> `i` works from any pane, not just the VPN one — it has to, since the VPN pane
+> hides itself until there is a profile in it, which is exactly where you are
+> when importing your first tunnel.
 
 ### Networks
 
@@ -293,6 +298,64 @@ way.
 
 Deleting always asks first. It is not a toggle, and for a WireGuard profile the
 private key is stored in the profile and goes with it.
+
+#### Importing a WireGuard config
+
+`i` takes a `wg-quick` config — the `.conf` every provider hands out — and saves
+it as a NetworkManager profile. The profile is named after the file, the way
+`wg-quick` derives an interface from it: `mullvad-se.conf` becomes the
+`mullvad-se` tunnel.
+
+It reads the file first and shows what is in it before writing anything:
+
+```
+                     Import mullvad-se?
+
+  Interface   mullvad-se
+  Endpoint    185.65.135.170:51820
+  Routes      all traffic from this machine
+  DNS         10.64.0.1
+
+The private key is stored in the profile, readable by root.
+NetworkManager cannot carry over: postup = ..., table = off
+Imported switched off; connect it from the pane.
+```
+
+Three things are worth knowing, and the summary says all of them:
+
+- **What it routes.** A provider's config has `AllowedIPs = 0.0.0.0/0`, which
+  means every packet. A mesh or split-tunnel config does not.
+- **What was dropped.** `PostUp`, `PreUp`, `Table` and friends are `wg-quick`
+  features implemented by shelling out, so NetworkManager has nothing to map
+  them to. A `PostUp` is often a killswitch. Losing one silently would give you
+  a tunnel that looks right and isn't, so they are named instead.
+- **Where the key ends up.** In the profile, under
+  `/etc/NetworkManager/system-connections/`, root-only. Adding it needs polkit
+  `org.freedesktop.NetworkManager.settings.modify.system`.
+
+**Importing does not connect.** Reading a file and sending all your traffic to a
+provider are separate decisions, and the new row is one keypress from the
+former. Auto-connect is off for the same reason.
+
+A config that is incomplete or malformed is refused with a reason naming the
+line, rather than being half-imported into a profile that fails later from
+inside NetworkManager with a message about something else.
+
+#### OpenVPN
+
+There is no `.ovpn` importer. NetworkManager's lives in the
+`NetworkManager-openvpn` plugin rather than in the D-Bus API, so netpala would
+have to reimplement the plugin's option mapping to do it properly. Import with
+nmcli and the profile appears in the pane like any other:
+
+```bash
+nmcli connection import type openvpn file work.ovpn
+```
+
+> **Neither the VPN pane nor the importer has been tried against a live
+> tunnel.** Both are covered by unit tests and written against NetworkManager's
+> documented settings, but no VPN profile has been on hand to test with. If
+> something misbehaves, that is the first thing to suspect.
 
 ---
 
@@ -468,7 +531,7 @@ netpala keeps them consistent for the live connection:
 
 | You do | netpala does |
 | --- | --- |
-| Switch the resolver **on** here | Points the live connection's DNS at it |
+| Switch the resolver **on** here | Asks whether the live connection should resolve through it |
 | Pick DNSCrypt for the **active** network | Starts the resolver, then applies the DNS |
 | Pick DNSCrypt for an **inactive** network | Saves the setting only — the resolver follows when that network is activated |
 | Switch the resolver **off** here | Opens the DNS picker to choose a replacement first |
@@ -477,6 +540,27 @@ Ordering matters and is sequenced, never run in parallel: the resolver is
 listening *before* `resolv.conf` points at it, and a replacement is applied
 *before* the resolver goes away. That leaves no window where name resolution
 is pointed at something that isn't there.
+
+Switching the resolver on asks before moving DNS:
+
+```
+Resolve home-wifi through DNSCrypt?
+
+DNSCrypt is starting either way. This is only about whether this
+machine's DNS queries are sent to it.
+```
+
+**Declining still starts the unit** — it only leaves DNS where it is, which is
+what you want if something else on the machine is the intended client. Earlier
+versions did this without asking, on the reasoning that a resolver answering
+nobody is pointless; but it rewrites the network profile and moves every lookup
+on the machine, which is a good deal more than "start a service" implies.
+
+The question is skipped when there is nothing to decide: no connection, or a
+connection already pointed at the resolver. A unit that has **both**
+`provides_dns` and a `confirm` text asks twice, because consenting to run
+something and consenting to send it all your DNS are different questions and
+folding the second into the first would hide it.
 
 Switching the resolver off while the live connection uses it opens the picker
 rather than warning you:
@@ -601,6 +685,14 @@ help = "Hidden"
 keys = ["d"]
 help = "DNS"
 
+[keybindings.set_mac]
+keys = ["m"]
+help = "MAC"
+
+[keybindings.import_vpn]
+keys = ["i"]
+help = "Import"
+
 # Application
 [keybindings.quit]
 keys = ["q", "ctrl+c", "ctrl+q", "ctrl+w"]
@@ -660,6 +752,8 @@ Colors can be specified as:
 - Shows known and scanned networks
 - VPN pane: connect, disconnect, delete and set auto-connect on saved
   WireGuard and VPN-plugin profiles, with the tunnel endpoint shown
+- Import a `wg-quick` WireGuard config, with a summary of what it routes and
+  what NetworkManager cannot carry over
 - Add & connect to:
   - WPA-PSK
   - WPA-SAE
@@ -671,16 +765,6 @@ Colors can be specified as:
 - Per-network DNS provider switcher (DHCP / Cloudflare / Google / DNSCrypt / Custom)
 - Optional Security pane for toggling systemd units (transparent Tor, DNSCrypt)
 - Communicates with NetworkManager + wpa_supplicant over DBus
-
----
-
-## ⚠️ Missing / TODO
-
-- VPN pane tested against unit tests and NetworkManager's documented settings,
-  but not yet against a live tunnel — no VPN profile has been on hand to try it
-  with. Importing a WireGuard config from netpala is not implemented yet; add
-  profiles with `nmcli connection import type wireguard file wg0.conf` for now.
-- Probably some bugs (Hopefully there's nothing)
 
 ---
 

@@ -119,10 +119,28 @@ fans out to a `VpnUpdateMsg` in `dbus/events.go`.
 
 ---
 
-## Phase 2 — WireGuard import
+## Phase 2 — WireGuard import — **done**
 
 The target: point netpala at a `wg0.conf` from Mullvad, Proton, IVPN or your own
 server and get a working profile.
+
+Landed as `common/wgconf.go` (parse), `dbus/vpn.go` (translate and add) and
+`models/vpn_import.go` (the popup). Three things this plan had not anticipated:
+
+- **The VPN pane hides itself when empty**, so a key bound to the pane would be
+  unreachable for the one user who needs it — someone with no profiles yet.
+  Import is a global key instead. It is also *not* in `PaneHelp`: the status bar
+  is budgeted at exactly one row, and a ninth hint pushes pane navigation off
+  the end at 80 columns. Documented under Global in the README instead.
+- **wg-quick directives NM cannot express** (`PostUp`, `Table`, …) are collected
+  rather than dropped, and shown in the import summary. A `PostUp` is often a
+  killswitch; losing one silently gives you a tunnel that looks right and is
+  not.
+- **The popup has two stages.** The file is read and summarised — what it
+  routes, where the key lands, what was dropped — before anything is written. A
+  provider's `.conf` is an opaque download that most people never read.
+
+Import deliberately does not connect, and sets `autoconnect = false`.
 
 ### `common/wgconf.go` — parse
 
