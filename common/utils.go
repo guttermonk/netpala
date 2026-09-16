@@ -200,12 +200,11 @@ func FormatStationData(devices []Device) [][]string {
 
 func FormatVpnData(vpns []VpnConnection) [][]string {
 	data := [][]string{
-		// Type and Auto-Connect are fixed at their longest real value plus a
-		// space: the longest plugin name netpala can produce is OPENCONNECT at
-		// 11, and "Auto-Connect" is its own longest value at 12. Name and
-		// Endpoint split what is left, since both hold arbitrary-length text
-		// and neither deserves the slack more than the other.
-		padHeaders([]string{"", "Name", "Type", "Endpoint", "Auto-Connect"}, []int{5, -1, 12, -1, 12}), {""},
+		// Type is fixed at the longest plugin name netpala can produce,
+		// OPENCONNECT at 11, plus a space. Name and Endpoint split what is
+		// left, since both hold arbitrary-length text and neither deserves the
+		// slack more than the other.
+		padHeaders([]string{"", "Name", "Type", "Endpoint", "Auto"}, []int{5, -1, 12, -1, 8}), {""},
 	}
 	for _, vpn := range vpns {
 		state := "     "
@@ -283,10 +282,16 @@ func FormatKnownNetworksData(networks []KnownNetwork, selectedRow int, height in
 		// Name is the only flexible column, so it absorbs all the slack: at 140
 		// columns it was 73 wide for SSIDs of at most 32. The fixed widths are
 		// sized to their longest real value plus a space ("Cloudflare" is 10,
-		// "Permanent" 9, the "Auto-Connect" header 12), which leaves Name
-		// roomier on a narrow terminal without truncating anything on a wide
-		// one.
-		padHeaders([]string{"", "Name", "Security", "DNS", "MAC", "Hidden", "Auto-Connect", "Signal"}, []int{5, -1, 10, 11, 10, 7, 12, 7}), {""},
+		// "Permanent" 9), which leaves Name roomier on a narrow terminal
+		// without truncating anything on a wide one.
+		//
+		// The last three are headers rather than values: "false" is 5, so the
+		// width is set by the word above it. Each is one wider than its label,
+		// because padHeaders renders a header centred in exactly its column and
+		// puts no gap between columns -- a label that fills its width runs
+		// straight into the next one. "Auto" rather than "Auto-Connect" for
+		// that reason, and because it is what the status bar calls the key.
+		padHeaders([]string{"", "Name", "Security", "DNS", "MAC", "Hidden", "Auto", "Signal"}, []int{5, -1, 10, 11, 10, 8, 8, 8}), {""},
 	}
 	window := FormatArrays(networks, selectedRow, height)
 	for _, n := range window {

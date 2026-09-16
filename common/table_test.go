@@ -92,6 +92,35 @@ func TestFixedColumnsFitTheirLongestLabel(t *testing.T) {
 	}
 }
 
+// padHeaders centres each header in exactly its column and puts nothing
+// between columns, so a label as wide as its column runs straight into the
+// next one -- which is how "Auto-Connect" ended up touching "Signal". Checked
+// for every table rather than for the one that broke.
+func TestHeadersDoNotTouchTheNextColumn(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	for _, w := range []int{80, 100, 120, 140} {
+		SetWindowSizeForTest(w, 40)
+
+		for name, header := range map[string][]string{
+			"known":   FormatKnownNetworksData(sampleNetworks(), 0, 3)[0],
+			"vpn":     FormatVpnData(sampleVpns())[0],
+			"scanned": FormatScannedNetworksData(nil, 0, 0)[0],
+		} {
+			for i := 0; i < len(header)-1; i++ {
+				left, right := header[i], header[i+1]
+				if left == "" || strings.TrimSpace(right) == "" {
+					continue // spacer columns have no label to collide
+				}
+				if !strings.HasSuffix(left, " ") && !strings.HasPrefix(right, " ") {
+					t.Errorf("width %d: %s header %q runs into %q",
+						w, name, strings.TrimSpace(left), strings.TrimSpace(right))
+				}
+			}
+		}
+	}
+}
+
 func sampleVpns() []VpnConnection {
 	return []VpnConnection{
 		{Name: "mullvad-se", ConnType: "WireGuard", Endpoint: "185.65.135.170:51820",
@@ -113,7 +142,7 @@ func TestVpnTableShowsEndpointAndAutoConnect(t *testing.T) {
 		if len(header) != 5 {
 			t.Errorf("width %d: %d columns, want 5", w, len(header))
 		}
-		for _, want := range []string{"Name", "Type", "Endpoint", "Auto-Connect"} {
+		for _, want := range []string{"Name", "Type", "Endpoint", "Auto"} {
 			var found bool
 			for _, cell := range header {
 				if strings.TrimSpace(cell) == want {
