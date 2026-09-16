@@ -92,6 +92,64 @@ func TestFixedColumnsFitTheirLongestLabel(t *testing.T) {
 	}
 }
 
+func sampleVpns() []VpnConnection {
+	return []VpnConnection{
+		{Name: "mullvad-se", ConnType: "WireGuard", Endpoint: "185.65.135.170:51820",
+			AutoConnect: true, Connected: true},
+		{Name: "work", ConnType: "OPENCONNECT", Endpoint: "vpn.example.com"},
+	}
+}
+
+// Which server you are on is the thing the pane most needs to say, and it is
+// not derivable from the profile name.
+func TestVpnTableShowsEndpointAndAutoConnect(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	for _, w := range []int{80, 100, 140} {
+		SetWindowSizeForTest(w, 40)
+		rows := FormatVpnData(sampleVpns())
+
+		header := rows[0]
+		if len(header) != 5 {
+			t.Errorf("width %d: %d columns, want 5", w, len(header))
+		}
+		for _, want := range []string{"Name", "Type", "Endpoint", "Auto-Connect"} {
+			var found bool
+			for _, cell := range header {
+				if strings.TrimSpace(cell) == want {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("width %d: %q column missing from header %q", w, want, header)
+			}
+		}
+	}
+}
+
+// Name and Endpoint hold arbitrary text and may truncate. The fixed columns
+// must not: a Type shown as "OPENCO..." tells the user nothing.
+func TestVpnFixedColumnsDoNotTruncate(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	const nameCol, endpointCol = 1, 3
+
+	for _, w := range []int{80, 100, 120, 140} {
+		SetWindowSizeForTest(w, 40)
+
+		for _, row := range FormatVpnData(sampleVpns())[2:] {
+			for i, cell := range row {
+				if i == nameCol || i == endpointCol {
+					continue
+				}
+				if strings.HasSuffix(cell, "...") {
+					t.Errorf("width %d: column %d truncated to %q", w, i, cell)
+				}
+			}
+		}
+	}
+}
+
 // Name is the only flexible column, so it takes whatever is left. It must not
 // be squeezed to nothing on a narrow terminal.
 func TestNameColumnKeepsUsableWidth(t *testing.T) {

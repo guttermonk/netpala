@@ -200,7 +200,12 @@ func FormatStationData(devices []Device) [][]string {
 
 func FormatVpnData(vpns []VpnConnection) [][]string {
 	data := [][]string{
-		padHeaders([]string{"", "Name", "Type"}, []int{5, -1, -1}), {""},
+		// Type and Auto-Connect are fixed at their longest real value plus a
+		// space: the longest plugin name netpala can produce is OPENCONNECT at
+		// 11, and "Auto-Connect" is its own longest value at 12. Name and
+		// Endpoint split what is left, since both hold arbitrary-length text
+		// and neither deserves the slack more than the other.
+		padHeaders([]string{"", "Name", "Type", "Endpoint", "Auto-Connect"}, []int{5, -1, 12, -1, 12}), {""},
 	}
 	for _, vpn := range vpns {
 		state := "     "
@@ -208,7 +213,7 @@ func FormatVpnData(vpns []VpnConnection) [][]string {
 			state = "  >  "
 		}
 
-		row := []string{state, vpn.Name, vpn.ConnType}
+		row := []string{state, vpn.Name, vpn.ConnType, vpn.Endpoint, strconv.FormatBool(vpn.AutoConnect)}
 		for i := range row {
 			if lipgloss.Width(row[i]) > lipgloss.Width(data[0][i]) {
 				row[i] = row[i][:max(0, lipgloss.Width(data[0][i])-3)] + "..."

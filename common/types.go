@@ -170,6 +170,13 @@ type VpnConnection struct {
 	Name       string
 	ConnType   string
 	Connected  bool
+	// AutoConnect mirrors connection.autoconnect, which NetworkManager treats
+	// as true when the profile does not say otherwise.
+	AutoConnect bool
+	// Endpoint is the far end of the tunnel: a WireGuard peer's endpoint, or
+	// the remote/gateway of a VPN plugin. Which server you are on is the thing
+	// the pane most needs to say, and it is not derivable from the name.
+	Endpoint string
 }
 
 // DnsStateMsg carries what the system is actually resolving through, so the
