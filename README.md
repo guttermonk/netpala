@@ -250,6 +250,50 @@ windowrule = float 1, match:title com.omarchy.netpala
 - d : Switch DNS provider
 - m : Switch MAC address mode
 
+### VPN
+
+- Space / Enter : Connect / Disconnect
+- Delete / Backspace : Delete the saved profile
+- a : Toggle auto-connect
+
+---
+
+### VPN Pane
+
+Lists the saved NetworkManager profiles whose type is `vpn` or `wireguard`, and
+hides itself when there are none.
+
+```
+┌ Virtual Private Networks ────────────────────────────────────────────────────┐
+│         Name              Type          Endpoint         Auto-Connect        │
+│                                                                              │
+│  >   mullvad-se        WireGuard   185.65.135.170:51820      true            │
+│      work              OPENCONNECT vpn.example.com           false           │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Connecting a VPN does not drop your Wi-Fi** — the tunnel rides on top of it,
+so the Known Networks row keeps its `>` marker and both show as connected. A
+`vpn`-type profile is layered by NetworkManager over the active connection; a
+`wireguard` profile gets its own device. Either way, if the Wi-Fi goes, the
+tunnel goes with it.
+
+The Endpoint column is the far end of the tunnel, which is not something the
+profile name can be trusted to tell you. WireGuard keeps it per peer, so a
+config with several peers shows the first and a count of the rest
+(`10.0.0.1:51820 +2`); VPN plugins bury it in a plugin-specific field, and one
+netpala does not recognise shows a blank rather than a guess.
+
+Auto-connect writes `connection.autoconnect` on the profile. For a `wireguard`
+profile this behaves like any other device connection. For a `vpn` plugin
+profile, whether NetworkManager brings it up unprompted has varied by version —
+the dependable way to chain one to a network is `connection.secondaries` on
+that network's profile. netpala writes the setting and reports it back either
+way.
+
+Deleting always asks first. It is not a toggle, and for a WireGuard profile the
+private key is stored in the profile and goes with it.
+
 ---
 
 ### DNS Provider Switcher
@@ -614,7 +658,8 @@ Colors can be specified as:
 
 - Lists available network devices
 - Shows known and scanned networks
-- Shows VPN connections
+- VPN pane: connect, disconnect, delete and set auto-connect on saved
+  WireGuard and VPN-plugin profiles, with the tunnel endpoint shown
 - Add & connect to:
   - WPA-PSK
   - WPA-SAE
@@ -631,7 +676,10 @@ Colors can be specified as:
 
 ## ⚠️ Missing / TODO
 
-- VPN manager UI Testing (Should work but haven't been able to test 100%)
+- VPN pane tested against unit tests and NetworkManager's documented settings,
+  but not yet against a live tunnel — no VPN profile has been on hand to try it
+  with. Importing a WireGuard config from netpala is not implemented yet; add
+  profiles with `nmcli connection import type wireguard file wg0.conf` for now.
 - Probably some bugs (Hopefully there's nothing)
 
 ---

@@ -86,9 +86,23 @@ resolver. Same problem, new source.
 
 ---
 
-## Phase 1 — Make the existing pane a manager
+## Phase 1 — Make the existing pane a manager — **done**
 
 Small, and reuses commands that already exist.
+
+Landed. Two things turned up that this plan had not accounted for:
+
+- `ToggleAutoConnectCmd` ended by returning `KnownNetworksUpdateMsg`, so
+  reusing it for a VPN profile would have written the setting correctly and
+  then left the pane the user was looking at showing the old value until the
+  15-second tick. Split into `setAutoconnect` plus two thin commands that
+  refresh their own pane.
+- NetworkManager omits `connection.autoconnect` when it is at its default,
+  which is **true**. Reading the absent key as the Go zero value would have
+  reported every profile as off.
+
+`DeleteConnectionCmd` needed no VPN-specific work: `ConnectionRemoved` already
+fans out to a `VpnUpdateMsg` in `dbus/events.go`.
 
 1. **Delete a profile.** Wire `Remove` on `PaneVPN` in `netpala.go`;
    `dbus.DeleteConnectionCmd` is already generic over connection path. Needs a
