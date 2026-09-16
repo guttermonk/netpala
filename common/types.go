@@ -72,6 +72,15 @@ type SubmitMacMsg struct {
 	Explicit string
 }
 
+// SubmitVpnImportMsg carries an accepted WireGuard config. The file has
+// already been read and parsed by the time this is sent, so the popup can show
+// what it contains before anything is written.
+type SubmitVpnImportMsg struct {
+	Config *WireGuardConfig
+	ID     string
+	Ifname string
+}
+
 // MacRevertedMsg reports that a MAC change was rejected after the profile had
 // already been written, and that netpala has put the previous setting back.
 //

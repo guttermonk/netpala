@@ -32,6 +32,7 @@ type KeyBindings struct {
 	ToggleHidden      KeyBinding `toml:"toggle_hidden"`
 	SetDns            KeyBinding `toml:"set_dns"`
 	SetMac            KeyBinding `toml:"set_mac"`
+	ImportVpn         KeyBinding `toml:"import_vpn"`
 
 	// Application
 	Quit   KeyBinding `toml:"quit"`
@@ -180,6 +181,10 @@ func DefaultKeyBindings() KeyBindings {
 		SetMac: KeyBinding{
 			Keys: []string{"m"},
 			Help: "MAC",
+		},
+		ImportVpn: KeyBinding{
+			Keys: []string{"i"},
+			Help: "Import",
 		},
 		Quit: KeyBinding{
 			Keys: []string{"q", "ctrl+c", "ctrl+q", "ctrl+w"},
@@ -341,6 +346,9 @@ func mergeWithDefaults(cfg Config) Config {
 	if len(cfg.KeyBindings.SetMac.Keys) == 0 {
 		cfg.KeyBindings.SetMac = defaults.SetMac
 	}
+	if len(cfg.KeyBindings.ImportVpn.Keys) == 0 {
+		cfg.KeyBindings.ImportVpn = defaults.ImportVpn
+	}
 	if len(cfg.KeyBindings.Quit.Keys) == 0 {
 		cfg.KeyBindings.Quit = defaults.Quit
 	}
@@ -381,6 +389,9 @@ func mergeWithDefaults(cfg Config) Config {
 	}
 	if cfg.KeyBindings.SetMac.Help == "" {
 		cfg.KeyBindings.SetMac.Help = defaults.SetMac.Help
+	}
+	if cfg.KeyBindings.ImportVpn.Help == "" {
+		cfg.KeyBindings.ImportVpn.Help = defaults.ImportVpn.Help
 	}
 	if cfg.KeyBindings.Quit.Help == "" {
 		cfg.KeyBindings.Quit.Help = defaults.Quit.Help
@@ -502,6 +513,7 @@ type AppKeyMap struct {
 	ToggleHidden      key.Binding
 	SetDns            key.Binding
 	SetMac            key.Binding
+	ImportVpn         key.Binding
 	Quit              key.Binding
 	Cancel            key.Binding
 }
@@ -520,6 +532,7 @@ func NewAppKeyMap(cfg *Config) AppKeyMap {
 		ToggleHidden:      cfg.KeyBindings.ToggleHidden.ToKeyBinding(),
 		SetDns:            cfg.KeyBindings.SetDns.ToKeyBinding(),
 		SetMac:            cfg.KeyBindings.SetMac.ToKeyBinding(),
+		ImportVpn:         cfg.KeyBindings.ImportVpn.ToKeyBinding(),
 		Quit:              cfg.KeyBindings.Quit.ToKeyBinding(),
 		Cancel:            cfg.KeyBindings.Cancel.ToKeyBinding(),
 	}
@@ -551,6 +564,12 @@ func (k AppKeyMap) PaneHelp(pane int) []key.Binding {
 	case common.PaneScanned:
 		return []key.Binding{k.Up, k.Down, k.Select, k.Scan, k.NextPane, k.PrevPane, k.Quit}
 	case common.PaneVPN:
+		// Import is deliberately absent. It is a global key rather than a pane
+		// action -- it has to be, since this pane is hidden until there is a
+		// profile to put in it, which is exactly the state someone importing
+		// their first tunnel is in. Listing it here as well costs a hint the
+		// bar does not have room for: the layout budgets one row for it, and
+		// a ninth entry pushes pane navigation off the end at 80 columns.
 		return []key.Binding{
 			k.Up, k.Down, k.Select, k.Remove, k.ToggleAutoConnect,
 			k.NextPane, k.PrevPane, k.Quit,

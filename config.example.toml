@@ -65,6 +65,13 @@ help = "DNS"
 keys = ["m"]
 help = "MAC"
 
+# Actions - Import a wg-quick WireGuard config as a NetworkManager profile.
+# Works from any pane: the VPN pane hides itself while it is empty, which is
+# where you are when importing your first tunnel.
+[keybindings.import_vpn]
+keys = ["i"]
+help = "Import"
+
 # Application - Quit the application
 [keybindings.quit]
 keys = ["q", "ctrl+c", "ctrl+q", "ctrl+w"]
