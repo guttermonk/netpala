@@ -80,19 +80,37 @@ func TestOnlyApplicableKeysAreOffered(t *testing.T) {
 		return false
 	}
 
-	// Remove, auto-connect, hidden and DNS only act on known networks.
-	knownOnly := []string{"Remove", "Auto", "Hidden", "DNS"}
+	// Hidden, DNS and MAC are settings of a wireless profile and exist nowhere
+	// else. Remove and auto-connect act on any saved connection profile, so
+	// they belong to the VPN pane too -- but not to the panes that hold no
+	// profiles at all.
+	knownOnly := []string{"Hidden", "DNS", "MAC"}
+	profileActions := []string{"Remove", "Auto"}
 
 	known := helpFor(common.PaneKnown)
-	for _, h := range knownOnly {
+	for _, h := range append(append([]string{}, knownOnly...), profileActions...) {
 		if !has(known, h) {
 			t.Errorf("Known Networks should offer %q, got %v", h, known)
 		}
 	}
 
-	for _, pane := range []int{common.PaneScanned, common.PaneVPN, common.PaneSecurity, common.PaneDevice} {
+	vpn := helpFor(common.PaneVPN)
+	for _, h := range profileActions {
+		if !has(vpn, h) {
+			t.Errorf("VPN should offer %q; it manages saved profiles too, got %v", h, vpn)
+		}
+	}
+	for _, h := range knownOnly {
+		if has(vpn, h) {
+			t.Errorf("VPN offers %q, which is a wireless-profile setting: %v", h, vpn)
+		}
+	}
+
+	// Nothing in these panes is a saved profile: a scan result is not saved
+	// yet, a systemd unit is the system's, and the device is hardware.
+	for _, pane := range []int{common.PaneScanned, common.PaneSecurity, common.PaneDevice} {
 		hints := helpFor(pane)
-		for _, h := range knownOnly {
+		for _, h := range append(append([]string{}, knownOnly...), profileActions...) {
 			if has(hints, h) {
 				t.Errorf("pane %d offers %q, which does nothing there: %v", pane, h, hints)
 			}

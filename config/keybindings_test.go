@@ -1,9 +1,48 @@
 package config
 
 import (
+	"netpala/common"
 	"strings"
 	"testing"
 )
+
+// helpAdvertises reports whether a pane's footer offers the given action.
+func helpAdvertises(pane int, help string) bool {
+	cfg := DefaultConfig()
+	for _, b := range NewAppKeyMap(&cfg).PaneHelp(pane) {
+		if b.Help().Desc == help {
+			return true
+		}
+	}
+	return false
+}
+
+// The footer is the only place the keys are documented, so an action that
+// works on a pane has to be listed there -- and one that does not must not be,
+// or it advertises a key that does nothing.
+func TestVpnPaneAdvertisesItsOwnActions(t *testing.T) {
+	for _, action := range []string{"Dis/Connect", "Remove", "Auto"} {
+		if !helpAdvertises(common.PaneVPN, action) {
+			t.Errorf("VPN pane does not offer %q", action)
+		}
+	}
+	for _, action := range []string{"DNS", "MAC", "Hidden", "Scan"} {
+		if helpAdvertises(common.PaneVPN, action) {
+			t.Errorf("VPN pane offers %q, which does nothing there", action)
+		}
+	}
+}
+
+// A systemd unit is installed by the system, not by netpala, so there is
+// nothing in the Security pane for Remove to act on.
+func TestSecurityPaneDoesNotOfferRemove(t *testing.T) {
+	if helpAdvertises(common.PaneSecurity, "Remove") {
+		t.Error("Security pane offers Remove; a unit is not netpala's to delete")
+	}
+	if !helpAdvertises(common.PaneSecurity, "Dis/Connect") {
+		t.Error("Security pane no longer offers its toggle")
+	}
+}
 
 // The consent texts exist to tell the user what leaves the machine, so that is
 // what they have to contain. A prompt that only says "are you sure?" is worse

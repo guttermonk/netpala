@@ -19,6 +19,7 @@ import (
 const (
 	confirmDeleteNetwork = iota
 	confirmStartService
+	confirmDeleteVpn
 )
 
 type NetpalaData struct {
@@ -50,6 +51,11 @@ type NetpalaData struct {
 	SelectedNetwork common.ScannedNetwork
 	DnsTarget       common.KnownNetwork
 	MacTarget       common.KnownNetwork
+	// VpnTarget is the profile a confirmed deletion will remove. Held by value
+	// rather than by row index for the same reason pendingStartUnit is: a
+	// refresh can rewrite VpnData while the prompt is up, and a stale index
+	// would delete whatever had moved into that row.
+	VpnTarget common.VpnConnection
 	// NMMacDefault is what NetworkManager's global wifi.cloned-mac-address
 	// resolves to, read once so the MAC picker can name what "Default" means.
 	NMMacDefault string
@@ -219,6 +225,27 @@ func (m *NetpalaData) openStartConfirmation(svc common.SecurityService) {
 	m.pendingStartUnit = svc.Unit
 	m.Confirmation = models.ModelConfirmation(m.Colors)
 	m.Confirmation.Message = svc.Confirm
+	m.Overlay = updateOverlayModel(*m, &m.Confirmation)
+}
+
+// openDeleteVpnConfirmation asks before removing a saved VPN profile.
+//
+// Always asks, unlike the Security pane's start-only gate: deleting is not a
+// toggle, and there is nothing to switch back on afterwards. A WireGuard
+// profile in particular takes its private key with it, and netpala has no way
+// to put that back.
+func (m *NetpalaData) openDeleteVpnConfirmation(vpn common.VpnConnection) {
+	m.PopupState = 1
+	m.confirmAction = confirmDeleteVpn
+	m.VpnTarget = vpn
+	m.Confirmation = models.ModelConfirmation(m.Colors)
+
+	msg := fmt.Sprintf("Are you sure you want to delete the VPN connection '%s'?\n", vpn.Name)
+	if vpn.ConnType == "WireGuard" {
+		msg += "\nIts private key is stored in the profile and will go with it.\n"
+	}
+	m.Confirmation.Message = msg
+
 	m.Overlay = updateOverlayModel(*m, &m.Confirmation)
 }
 
@@ -618,6 +645,14 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, tea.Batch(m.toggleSecurityCmd(svc), listen)
 
+			case confirmDeleteVpn:
+				target := m.VpnTarget
+				m.VpnTarget = common.VpnConnection{}
+				// Deleting a live VPN is allowed; NetworkManager tears the
+				// tunnel down as part of removing the profile. The Wi-Fi
+				// connection underneath it is untouched either way.
+				return m, tea.Batch(dbus.DeleteConnectionCmd(m.Conn, target.Path), listen)
+
 			default: // confirmDeleteNetwork
 				// NOTE: Ensure m.SelectedNetwork holds the correct data before entering state 1
 				deleteCmd := dbus.DeleteConnectionCmd(m.Conn, m.SelectedNetwork.Path)
@@ -942,14 +977,20 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				m.Overlay = updateOverlayModel(m, &m.Confirmation)
 				return m, nil
+			} else if m.selectedBox == common.PaneVPN && len(m.VpnData) > 0 {
+				m.openDeleteVpnConfirmation(m.VpnData[m.SelectedEntry])
+				return m, nil
 			}
 		}
 
-		// Toggle Auto-Connect action (only for known networks)
+		// Toggle Auto-Connect action (known networks and VPN profiles)
 		if m.Config.KeyBindings.ToggleAutoConnect.Matches(keyStr) {
 			if m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0 {
 				selectedNetwork := m.KnownNetworks[m.SelectedEntry]
 				return m, dbus.ToggleAutoConnectCmd(m.Conn, selectedNetwork.Path, selectedNetwork.AutoConnect)
+			} else if m.selectedBox == common.PaneVPN && len(m.VpnData) > 0 {
+				selectedVpn := m.VpnData[m.SelectedEntry]
+				return m, dbus.ToggleVpnAutoConnectCmd(m.Conn, selectedVpn.Path, selectedVpn.AutoConnect)
 			}
 		}
 

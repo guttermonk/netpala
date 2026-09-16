@@ -550,7 +550,14 @@ func (k AppKeyMap) PaneHelp(pane int) []key.Binding {
 		}
 	case common.PaneScanned:
 		return []key.Binding{k.Up, k.Down, k.Select, k.Scan, k.NextPane, k.PrevPane, k.Quit}
-	case common.PaneVPN, common.PaneSecurity:
+	case common.PaneVPN:
+		return []key.Binding{
+			k.Up, k.Down, k.Select, k.Remove, k.ToggleAutoConnect,
+			k.NextPane, k.PrevPane, k.Quit,
+		}
+	case common.PaneSecurity:
+		// No remove: a unit is installed by the system, not by netpala, and
+		// nothing in this pane is netpala's to delete.
 		return []key.Binding{k.Up, k.Down, k.Select, k.NextPane, k.PrevPane, k.Quit}
 	case common.PaneDevice:
 		return []key.Binding{k.Select, k.Scan, k.NextPane, k.PrevPane, k.Quit}

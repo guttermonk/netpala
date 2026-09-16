@@ -551,38 +551,61 @@ func SetDnsCmd(
 // ToggleAutoConnectCmd toggles the autoconnect setting for a saved connection.
 func ToggleAutoConnectCmd(conn *dbus.Conn, connectionPath dbus.ObjectPath, currentValue bool) tea.Cmd {
 	return func() tea.Msg {
-		connObj := conn.Object(network.NMDest, connectionPath)
-
-		// 1. Get current settings
-		var settings map[string]map[string]dbus.Variant
-		call := connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.GetSettings", 0)
-		if call.Err != nil {
-			return common.ErrMsg{Err: fmt.Errorf("failed to get connection settings: %w", call.Err)}
+		if err := setAutoconnect(conn, connectionPath, !currentValue); err != nil {
+			return common.ErrMsg{Err: err}
 		}
-		if err := call.Store(&settings); err != nil {
-			return common.ErrMsg{Err: fmt.Errorf("failed to parse connection settings: %w", err)}
-		}
-
-		// 2. Remove fields with incompatible types
-		cleanSettingsForUpdate(settings)
-
-		// 3. Ensure connection section exists
-		if settings["connection"] == nil {
-			settings["connection"] = make(map[string]dbus.Variant)
-		}
-
-		// 4. Toggle autoconnect
-		settings["connection"]["autoconnect"] = dbus.MakeVariant(!currentValue)
-
-		// 4. Update the connection
-		call = connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.Update", 0, settings)
-		if call.Err != nil {
-			return common.ErrMsg{Err: fmt.Errorf("failed to update connection: %w", call.Err)}
-		}
-
-		// 6. Return refresh
 		return common.KnownNetworksUpdateMsg(network.GetKnownNetworks(conn))
 	}
+}
+
+// ToggleVpnAutoConnectCmd is the same write against a VPN profile, refreshing
+// the VPN pane instead of the network list.
+//
+// Split rather than parameterised because the refresh is the whole difference:
+// returning KnownNetworksUpdateMsg here would re-read every wireless profile,
+// and leave the pane the user is looking at showing the old value until the
+// 15-second tick caught up.
+//
+// Worth knowing before relying on it: for a `wireguard` profile autoconnect
+// behaves like any other device connection, but for a `vpn` plugin profile
+// NetworkManager's willingness to bring it up on its own has varied by version,
+// and the dependable way to chain one to a network is connection.secondaries on
+// that network's profile. netpala writes the setting and reports it back
+// faithfully either way.
+func ToggleVpnAutoConnectCmd(conn *dbus.Conn, connectionPath dbus.ObjectPath, currentValue bool) tea.Cmd {
+	return func() tea.Msg {
+		if err := setAutoconnect(conn, connectionPath, !currentValue); err != nil {
+			return common.ErrMsg{Err: err}
+		}
+		return common.VpnUpdateMsg(network.GetVpnData(conn))
+	}
+}
+
+// setAutoconnect writes connection.autoconnect on a saved profile.
+func setAutoconnect(conn *dbus.Conn, connectionPath dbus.ObjectPath, value bool) error {
+	connObj := conn.Object(network.NMDest, connectionPath)
+
+	var settings map[string]map[string]dbus.Variant
+	call := connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.GetSettings", 0)
+	if call.Err != nil {
+		return fmt.Errorf("failed to get connection settings: %w", call.Err)
+	}
+	if err := call.Store(&settings); err != nil {
+		return fmt.Errorf("failed to parse connection settings: %w", err)
+	}
+
+	// Remove fields with incompatible types
+	cleanSettingsForUpdate(settings)
+
+	if settings["connection"] == nil {
+		settings["connection"] = make(map[string]dbus.Variant)
+	}
+	settings["connection"]["autoconnect"] = dbus.MakeVariant(value)
+
+	if call := connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.Update", 0, settings); call.Err != nil {
+		return fmt.Errorf("failed to update connection: %w", call.Err)
+	}
+	return nil
 }
 
 // ToggleHiddenCmd toggles the hidden setting for a saved wireless connection.
