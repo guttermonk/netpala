@@ -571,7 +571,7 @@ func (k AppKeyMap) PaneHelp(pane int) []key.Binding {
 		// bar does not have room for: the layout budgets one row for it, and
 		// a ninth entry pushes pane navigation off the end at 80 columns.
 		return []key.Binding{
-			k.Up, k.Down, k.Select, k.Remove, k.ToggleAutoConnect,
+			k.Up, k.Down, k.Select, k.Remove, k.ToggleAutoConnect, k.SetDns,
 			k.NextPane, k.PrevPane, k.Quit,
 		}
 	case common.PaneSecurity:

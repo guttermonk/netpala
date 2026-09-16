@@ -175,6 +175,37 @@ func DNSModeLabel(id string) string {
 	return DNSProviderByID(id).Label
 }
 
+// VpnDNSLabel names a VPN profile's DNS setting.
+//
+// The same as DNSModeLabel except for the empty case. "DHCP" is meaningless
+// inside a tunnel -- nothing hands out resolvers there -- so a profile with no
+// nameservers of its own is "None", and the machine goes on resolving through
+// whatever the network underneath it uses.
+func VpnDNSLabel(id string) string {
+	if id == "" || id == DNSModeDHCP {
+		return "None"
+	}
+	return DNSModeLabel(id)
+}
+
+// DNSProvidersForVpn is the picker list with the first entry reworded for a
+// tunnel, for the same reason.
+//
+// Built on DNSProvidersFor, which already returns a copy: DNSProviders is
+// package-level and shared with the known-networks picker, so editing it in
+// place would change the wording everywhere.
+func DNSProvidersForVpn(dnscryptAddrs []string) []DNSProvider {
+	out := DNSProvidersFor(dnscryptAddrs)
+	for i := range out {
+		if out[i].ID == DNSModeDHCP {
+			out[i].Label = "None"
+			out[i].Desc = "none of its own; the network's"
+			break
+		}
+	}
+	return out
+}
+
 // MatchDNSProvider reports which provider a set of IPv4 nameservers matches.
 // No servers means DHCP; anything unrecognised reads back as custom.
 func MatchDNSProvider(servers []string) string {

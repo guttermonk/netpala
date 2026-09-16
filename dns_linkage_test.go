@@ -132,7 +132,7 @@ func TestInactiveProfileDoesNotStartResolver(t *testing.T) {
 		net("cafe", false, common.DNSModeDHCP),
 	})
 	m.PopupState = 3
-	m.DnsTarget = net("cafe", false, common.DNSModeDHCP) // not connected
+	m.DnsTarget = common.DNSTargetFromNetwork(net("cafe", false, common.DNSModeDHCP)) // not connected
 
 	before := m.SecurityData[1].Active
 	next, cmd := m.Update(common.SubmitDnsMsg{ProviderID: common.DNSModeDNSCrypt})
@@ -151,7 +151,7 @@ func TestSequenceUsedForOrdering(t *testing.T) {
 	// resolv.conf points at it, which Batch would not guarantee.
 	m := linkModel(false, []common.KnownNetwork{net("home", true, common.DNSModeDHCP)})
 	m.PopupState = 3
-	m.DnsTarget = net("home", true, common.DNSModeDHCP)
+	m.DnsTarget = common.DNSTargetFromNetwork(net("home", true, common.DNSModeDHCP))
 
 	_, cmd := m.Update(common.SubmitDnsMsg{ProviderID: common.DNSModeDNSCrypt})
 	if cmd == nil {
@@ -183,8 +183,8 @@ func TestStopOpensPickerWhenLiveConnectionDepends(t *testing.T) {
 	if m.pendingStopUnit != svc.Unit {
 		t.Errorf("pendingStopUnit = %q, want %q", m.pendingStopUnit, svc.Unit)
 	}
-	if m.DnsTarget.SSID != "home" {
-		t.Errorf("picker targeted %q, want the connected network", m.DnsTarget.SSID)
+	if m.DnsTarget.Label != "home" {
+		t.Errorf("picker targeted %q, want the connected network", m.DnsTarget.Label)
 	}
 	if m.DnsForm.Notice == "" {
 		t.Error("picker opened by netpala must explain why")

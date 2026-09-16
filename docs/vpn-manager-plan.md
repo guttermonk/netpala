@@ -194,14 +194,35 @@ the user is the one who chose the file.
 
 ---
 
-## Phase 3 — DNS for VPN profiles
+## Phase 3 — DNS for VPN profiles — **done**
 
 The DNS picker is `PaneKnown`-only. A VPN profile has its own `ipv4.dns`, and a
 WireGuard config almost always ships one. Extend the picker to `PaneVPN`.
 
-`DnsTarget` is typed `common.KnownNetwork`, so this needs either a small
-interface over "thing with a connection path and a DNS setting" or a second
-target field. The one real refactor in this plan.
+Landed. `DnsTarget` became `common.DNSTarget`, built from either a
+`KnownNetwork` or a `VpnConnection`, which was the refactor this plan expected.
+Four things it did not:
+
+- **`SetDnsCmd` ended with `KnownNetworksUpdateMsg`** — the same trap as
+  `ToggleAutoConnectCmd` in Phase 1, and the second time this pattern has
+  bitten. Split into `writeDNS` plus two commands. The rest of `dbus` was
+  audited for a third: `SetMacCmd` and `ToggleHiddenCmd` are the only other
+  commands ending that way, and MAC randomisation and hidden-SSID are both
+  genuinely wireless-only, so both are correct as they stand.
+- **A live tunnel has to be cycled, not re-activated on a device.**
+  NetworkManager reads the profile when the tunnel comes up, so nothing else
+  rewrites `resolv.conf` for an already-running one. `SetVpnDnsCmd` sequences
+  deactivate → activate → refresh.
+- **"DHCP" is meaningless inside a tunnel.** The empty option is reworded to
+  "None" for a VPN target, via a copy of the provider table — the known
+  networks picker shares it and must keep saying DHCP.
+- **A DNS column was needed in the VPN table.** Picking a new value for a row
+  whose current value is invisible is guesswork. This also covers one of the
+  Phase 4 options below.
+
+`d` fits in the VPN pane's status bar where `i` did not — the rendered bar is
+exactly 80 columns with nine hints. There is no slack left: a tenth hint, or a
+longer label on any existing one, will push pane navigation off the end.
 
 ---
 

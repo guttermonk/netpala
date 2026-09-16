@@ -80,12 +80,12 @@ func TestOnlyApplicableKeysAreOffered(t *testing.T) {
 		return false
 	}
 
-	// Hidden, DNS and MAC are settings of a wireless profile and exist nowhere
-	// else. Remove and auto-connect act on any saved connection profile, so
-	// they belong to the VPN pane too -- but not to the panes that hold no
-	// profiles at all.
-	knownOnly := []string{"Hidden", "DNS", "MAC"}
-	profileActions := []string{"Remove", "Auto"}
+	// Hidden and MAC are settings of a wireless profile and exist nowhere
+	// else. Remove, auto-connect and DNS act on any saved connection profile,
+	// so they belong to the VPN pane too -- a tunnel carries its own resolvers
+	// -- but not to the panes that hold no profiles at all.
+	knownOnly := []string{"Hidden", "MAC"}
+	profileActions := []string{"Remove", "Auto", "DNS"}
 
 	known := helpFor(common.PaneKnown)
 	for _, h := range append(append([]string{}, knownOnly...), profileActions...) {

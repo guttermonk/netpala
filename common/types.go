@@ -186,6 +186,58 @@ type VpnConnection struct {
 	// the remote/gateway of a VPN plugin. Which server you are on is the thing
 	// the pane most needs to say, and it is not derivable from the name.
 	Endpoint string
+	// DNSMode and DNSServers are the profile's own resolvers. A tunnel almost
+	// always ships its provider's, and while it is up those are what the
+	// machine resolves through -- so they belong to the VPN row rather than to
+	// the network underneath it.
+	DNSMode    string
+	DNSServers []string
+}
+
+// DNSTarget is a saved connection the DNS picker can act on.
+//
+// The picker began as a known-networks feature and took a KnownNetwork
+// directly. A VPN profile carries the same facts it needs -- a connection
+// path, a current setting, and whether it is live -- so both are reduced to
+// this rather than the picker learning about two types.
+type DNSTarget struct {
+	Path dbus.ObjectPath
+	// Label is the SSID, or the VPN profile's name.
+	Label     string
+	Mode      string
+	Servers   []string
+	Connected bool
+	// IsVPN changes how a change is applied. A wireless profile is
+	// re-activated on its device; a VPN has to be taken down through its own
+	// active connection and brought back up, and the refresh afterwards has to
+	// repaint a different pane.
+	IsVPN bool
+	// ActivePath is the live activation, needed to re-activate a VPN.
+	ActivePath dbus.ObjectPath
+}
+
+// DNSTargetFromNetwork adapts a wireless profile.
+func DNSTargetFromNetwork(n KnownNetwork) DNSTarget {
+	return DNSTarget{
+		Path:      n.Path,
+		Label:     n.SSID,
+		Mode:      n.DNSMode,
+		Servers:   n.DNSServers,
+		Connected: n.Connected,
+	}
+}
+
+// DNSTargetFromVpn adapts a VPN profile.
+func DNSTargetFromVpn(v VpnConnection) DNSTarget {
+	return DNSTarget{
+		Path:       v.Path,
+		Label:      v.Name,
+		Mode:       v.DNSMode,
+		Servers:    v.DNSServers,
+		Connected:  v.Connected,
+		IsVPN:      true,
+		ActivePath: v.ActivePath,
+	}
 }
 
 // DnsStateMsg carries what the system is actually resolving through, so the

@@ -19,7 +19,7 @@ func colemakKeys() config.KeyBindings {
 
 func TestDnsSelectHonoursReboundKeys(t *testing.T) {
 	m := ModelDnsSelect(config.DefaultColors(), colemakKeys(), nil)
-	m.SSID = "home"
+	m.Target = "home"
 	m.SelectProvider(common.DNSModeDHCP, nil) // cursor at 0
 
 	m, _ = send(t, m, "e", "e")

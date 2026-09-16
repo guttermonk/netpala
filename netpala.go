@@ -51,7 +51,7 @@ type NetpalaData struct {
 	VpnForm      models.VpnImport
 
 	SelectedNetwork common.ScannedNetwork
-	DnsTarget       common.KnownNetwork
+	DnsTarget       common.DNSTarget
 	MacTarget       common.KnownNetwork
 	// VpnTarget is the profile a confirmed deletion will remove. Held by value
 	// rather than by row index for the same reason pendingStartUnit is: a
@@ -453,12 +453,13 @@ func (m NetpalaData) dnsIsOverridden() bool {
 // away, so there is no window where resolv.conf points at a dead listener.
 // The unit is stopped only once a replacement has been applied.
 func (m *NetpalaData) openDnsPickerForStop(svc common.SecurityService) {
-	target, _ := m.connectedNetwork()
+	network, _ := m.connectedNetwork()
+	target := common.DNSTargetFromNetwork(network)
 	m.DnsTarget = target
 	m.pendingStopUnit = svc.Unit
 
-	m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.KeyBindings, m.Config.DNS.DnscryptAddresses)
-	m.DnsForm.SSID = target.SSID
+	m.DnsForm = models.ModelDnsSelectFor(m.Colors, m.Config.KeyBindings,
+		m.Config.DNS.DnscryptAddresses, target)
 
 	if m.dnsIsOverridden() {
 		// Changing the profile will not move resolv.conf, so promising a clean
@@ -468,7 +469,7 @@ func (m *NetpalaData) openDnsPickerForStop(svc common.SecurityService) {
 				"changing this profile will not move it. Stopping anyway will break lookups.",
 			svc.Name)
 	} else {
-		m.DnsForm.Notice = fmt.Sprintf("Switching %s off - pick DNS for %s first", svc.Name, target.SSID)
+		m.DnsForm.Notice = fmt.Sprintf("Switching %s off - pick DNS for %s first", svc.Name, target.Label)
 	}
 	// Start on DHCP rather than the current DNSCrypt selection: the point of
 	// this popup is to move off it.
@@ -814,12 +815,20 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				v4, v6 = parsedV4, parsedV6
 			}
 
-			// Only re-activate when this profile is the live connection.
-			devicePath := godbus.ObjectPath("/")
-			if target.Connected && len(m.DeviceData) > 0 {
-				devicePath = m.DeviceData[0].Path
+			// Only re-activate when this profile is the live connection. A VPN
+			// is cycled through its own active connection rather than on a
+			// device, so the two take different commands.
+			var setDns tea.Cmd
+			if target.IsVPN {
+				setDns = dbus.SetVpnDnsCmd(m.Conn, target.Path, target.ActivePath,
+					provider, v4, v6, target.Connected)
+			} else {
+				devicePath := godbus.ObjectPath("/")
+				if target.Connected && len(m.DeviceData) > 0 {
+					devicePath = m.DeviceData[0].Path
+				}
+				setDns = dbus.SetDnsCmd(m.Conn, target.Path, devicePath, provider, v4, v6, target.Connected)
 			}
-			setDns := dbus.SetDnsCmd(m.Conn, target.Path, devicePath, provider, v4, v6, target.Connected)
 
 			// Choosing DNSCrypt for the live connection also brings up the
 			// resolver that has to answer those queries. For a profile that is
@@ -1124,23 +1133,32 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// DNS provider switcher (only for known networks)
+		// DNS provider switcher. A VPN profile carries its own resolvers, and
+		// while the tunnel is up those are what the machine uses - so the
+		// picker has to reach them too, not just the network underneath.
 		if m.Config.KeyBindings.SetDns.Matches(keyStr) {
-			if m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0 {
-				m.DnsTarget = m.KnownNetworks[m.SelectedEntry]
-
-				m.DnsForm = models.ModelDnsSelect(m.Colors, m.Config.KeyBindings, m.Config.DNS.DnscryptAddresses)
-				m.DnsForm.SSID = m.DnsTarget.SSID
-				m.DnsForm.SelectProvider(m.DnsTarget.DNSMode, m.DnsTarget.DNSServers)
-
-				// If the profile already uses DNSCrypt, check the proxy is up
-				// before the user has a chance to re-apply it.
-				probeCmd := m.DnsForm.ProbeCmdIfNeeded()
-
-				m.PopupState = 3
-				m.Overlay = updateOverlayModel(m, &m.DnsForm)
-				return m, probeCmd
+			var target common.DNSTarget
+			switch {
+			case m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0:
+				target = common.DNSTargetFromNetwork(m.KnownNetworks[m.SelectedEntry])
+			case m.selectedBox == common.PaneVPN && len(m.VpnData) > 0:
+				target = common.DNSTargetFromVpn(m.VpnData[m.SelectedEntry])
+			default:
+				return m, nil
 			}
+			m.DnsTarget = target
+
+			m.DnsForm = models.ModelDnsSelectFor(m.Colors, m.Config.KeyBindings,
+				m.Config.DNS.DnscryptAddresses, target)
+			m.DnsForm.SelectProvider(target.Mode, target.Servers)
+
+			// If the profile already uses DNSCrypt, check the proxy is up
+			// before the user has a chance to re-apply it.
+			probeCmd := m.DnsForm.ProbeCmdIfNeeded()
+
+			m.PopupState = 3
+			m.Overlay = updateOverlayModel(m, &m.DnsForm)
+			return m, probeCmd
 		}
 
 		// Import a WireGuard config. Works from any pane on purpose: the VPN

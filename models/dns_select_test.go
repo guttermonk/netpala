@@ -42,7 +42,7 @@ func send(t *testing.T, m DnsSelect, keys ...string) (DnsSelect, tea.Msg) {
 
 func newForm() DnsSelect {
 	m := ModelDnsSelect(config.DefaultColors(), config.DefaultKeyBindings(), nil)
-	m.SSID = "home-wifi"
+	m.Target = "home-wifi"
 	m.SelectProvider(common.DNSModeDHCP, nil)
 	return m
 }
@@ -250,7 +250,7 @@ func TestDnsSelectStaleProbeIgnored(t *testing.T) {
 
 func TestDnsSelectUsesConfiguredDnscryptAddress(t *testing.T) {
 	m := ModelDnsSelect(config.DefaultColors(), config.DefaultKeyBindings(), []string{"127.0.0.53"})
-	m.SSID = "home"
+	m.Target = "home"
 	m.SelectProvider(common.DNSModeDHCP, nil)
 	if !strings.Contains(dnscryptRow(t, m).View(), "127.0.0.53") {
 		t.Error("configured listener should appear in the picker")
@@ -262,7 +262,7 @@ func TestDnsSelectUsesConfiguredDnscryptAddress(t *testing.T) {
 // the setting had already changed just from scrolling the list.
 func TestMarkerTracksCurrentNotCursor(t *testing.T) {
 	m := ModelDnsSelect(config.DefaultColors(), config.DefaultKeyBindings(), nil)
-	m.SSID = "home"
+	m.Target = "home"
 	m.SelectProvider(common.DNSModeCloudflare, nil)
 
 	markedRow := func(v string) string {
@@ -298,7 +298,7 @@ func TestCursorHighlightIsRendered(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 
 	m := ModelDnsSelect(config.DefaultColors(), config.DefaultKeyBindings(), nil)
-	m.SSID = "home"
+	m.Target = "home"
 	m.SelectProvider(common.DNSModeDHCP, nil)
 	next, _ := m.Update(keyMsg("down"))
 	m = next.(DnsSelect)

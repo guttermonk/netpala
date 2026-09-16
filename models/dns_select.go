@@ -22,7 +22,7 @@ const (
 // DnsSelect is the DNS provider picker shown for a known network. Highlighting
 // "Custom" focuses an inline input so the whole thing stays one popup.
 type DnsSelect struct {
-	SSID      string
+	Target    string
 	Cursor    int
 	Providers []common.DNSProvider
 	Custom    textinput.Model
@@ -58,6 +58,17 @@ func ModelDnsSelect(colors config.Colors, keys config.KeyBindings, dnscryptAddrs
 		Colors:    colors,
 		Keys:      keys,
 	}
+}
+
+// ModelDnsSelectFor builds the picker for a particular target, wording the
+// "no servers of its own" row to suit it. Everything else is identical.
+func ModelDnsSelectFor(colors config.Colors, keys config.KeyBindings, dnscryptAddrs []string, target common.DNSTarget) DnsSelect {
+	m := ModelDnsSelect(colors, keys, dnscryptAddrs)
+	m.Target = target.Label
+	if target.IsVPN {
+		m.Providers = common.DNSProvidersForVpn(dnscryptAddrs)
+	}
+	return m
 }
 
 // SelectProvider records which provider the profile is currently using and
@@ -223,7 +234,7 @@ func (m DnsSelect) View() string {
 	alertStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.Colors.ErrorText))
 
 	rows := []string{
-		titleStyle.Render(fmt.Sprintf("DNS for %s", m.SSID)),
+		titleStyle.Render(fmt.Sprintf("DNS for %s", m.Target)),
 		"",
 	}
 	if m.Notice != "" {

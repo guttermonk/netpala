@@ -508,33 +508,11 @@ func SetDnsCmd(
 	reactivate bool,
 ) tea.Cmd {
 	return func() tea.Msg {
-		connObj := conn.Object(network.NMDest, connectionPath)
-
-		// 1. Get current settings
-		var settings map[string]map[string]dbus.Variant
-		call := connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.GetSettings", 0)
-		if call.Err != nil {
-			return common.ErrMsg{Err: fmt.Errorf("failed to get connection settings: %w", call.Err)}
-		}
-		if err := call.Store(&settings); err != nil {
-			return common.ErrMsg{Err: fmt.Errorf("failed to parse connection settings: %w", err)}
-		}
-
-		// 2. Remove fields with incompatible types
-		cleanSettingsForUpdate(settings)
-
-		// 3. Apply the provider to the settings map.
-		if err := applyDNSToSettings(settings, provider, v4, v6); err != nil {
+		if err := writeDNS(conn, connectionPath, provider, v4, v6); err != nil {
 			return common.ErrMsg{Err: err}
 		}
 
-		// 4. Update the connection
-		call = connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.Update", 0, settings)
-		if call.Err != nil {
-			return common.ErrMsg{Err: fmt.Errorf("failed to update DNS settings: %w", call.Err)}
-		}
-
-		// 5. Re-activate so resolv.conf is rewritten immediately.
+		// Re-activate so resolv.conf is rewritten immediately.
 		var cmds []tea.Cmd
 		if reactivate && devicePath != "" && devicePath != "/" {
 			cmds = append(cmds, ConnectToNetworkCmd(conn, connectionPath, devicePath))
@@ -546,6 +524,78 @@ func SetDnsCmd(
 		// dispatches BatchMsg. Returning a Cmd here silently drops it.
 		return tea.BatchMsg(cmds)
 	}
+}
+
+// SetVpnDnsCmd is the same write against a VPN profile.
+//
+// Two things differ, and both would be wrong if SetDnsCmd were reused. A VPN
+// is not re-activated on a device -- it has to be taken down through its own
+// active connection and brought back up, which is what actually rewrites
+// resolv.conf. And the refresh afterwards has to repaint the VPN pane;
+// returning KnownNetworksUpdateMsg would re-read every wireless profile and
+// leave the row the user is looking at showing the old value.
+func SetVpnDnsCmd(
+	conn *dbus.Conn,
+	connectionPath dbus.ObjectPath,
+	activePath dbus.ObjectPath,
+	provider common.DNSProvider,
+	v4, v6 []string,
+	reactivate bool,
+) tea.Cmd {
+	return func() tea.Msg {
+		if err := writeDNS(conn, connectionPath, provider, v4, v6); err != nil {
+			return common.ErrMsg{Err: err}
+		}
+
+		refresh := func() tea.Msg { return common.VpnUpdateMsg(network.GetVpnData(conn)) }
+
+		if !reactivate || activePath == "" || activePath == "/" {
+			return tea.BatchMsg([]tea.Cmd{refresh})
+		}
+
+		// Down then up, sequenced: NetworkManager reads the profile when the
+		// tunnel comes up, so a running tunnel keeps the old resolvers until it
+		// is cycled. Batching the two would race, and bringing it up before it
+		// is fully down leaves the old activation in place.
+		return tea.BatchMsg([]tea.Cmd{
+			tea.Sequence(
+				ToggleVpnCmd(conn, connectionPath, activePath, true),  // deactivate
+				ToggleVpnCmd(conn, connectionPath, activePath, false), // activate
+				refresh,
+			),
+		})
+	}
+}
+
+// writeDNS rewrites one saved connection's nameservers.
+func writeDNS(
+	conn *dbus.Conn,
+	connectionPath dbus.ObjectPath,
+	provider common.DNSProvider,
+	v4, v6 []string,
+) error {
+	connObj := conn.Object(network.NMDest, connectionPath)
+
+	var settings map[string]map[string]dbus.Variant
+	call := connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.GetSettings", 0)
+	if call.Err != nil {
+		return fmt.Errorf("failed to get connection settings: %w", call.Err)
+	}
+	if err := call.Store(&settings); err != nil {
+		return fmt.Errorf("failed to parse connection settings: %w", err)
+	}
+
+	// Remove fields with incompatible types
+	cleanSettingsForUpdate(settings)
+
+	if err := applyDNSToSettings(settings, provider, v4, v6); err != nil {
+		return err
+	}
+
+	if call := connObj.Call("org.freedesktop.NetworkManager.Settings.Connection.Update", 0, settings); call.Err != nil {
+		return fmt.Errorf("failed to update DNS settings: %w", call.Err)
+	}
+	return nil
 }
 
 // ToggleAutoConnectCmd toggles the autoconnect setting for a saved connection.

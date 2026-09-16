@@ -139,10 +139,10 @@ func TestVpnTableShowsEndpointAndAutoConnect(t *testing.T) {
 		rows := FormatVpnData(sampleVpns())
 
 		header := rows[0]
-		if len(header) != 5 {
-			t.Errorf("width %d: %d columns, want 5", w, len(header))
+		if len(header) != 6 {
+			t.Errorf("width %d: %d columns, want 6", w, len(header))
 		}
-		for _, want := range []string{"Name", "Type", "Endpoint", "Auto"} {
+		for _, want := range []string{"Name", "Type", "Endpoint", "DNS", "Auto"} {
 			var found bool
 			for _, cell := range header {
 				if strings.TrimSpace(cell) == want {

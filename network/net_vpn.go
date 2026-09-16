@@ -85,6 +85,8 @@ func GetVpnData(c *dbus.Conn) []common.VpnConnection {
 				Connected:   isConnected,
 				AutoConnect: autoconnectFrom(connSettings),
 				Endpoint:    vpnEndpoint(connType, settings),
+				DNSMode:     DNSModeFromSettings(settings),
+				DNSServers:  DNSServersFromSettings(settings),
 			})
 		}
 	}

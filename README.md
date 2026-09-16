@@ -260,6 +260,7 @@ windowrule = float 1, match:title com.omarchy.netpala
 - Space / Enter : Connect / Disconnect
 - Delete / Backspace : Delete the saved profile
 - a : Toggle auto-connect
+- d : Switch the tunnel's DNS provider
 
 ---
 
@@ -270,10 +271,10 @@ hides itself when there are none.
 
 ```
 ┌ Virtual Private Networks ────────────────────────────────────────────────────┐
-│         Name              Type          Endpoint         Auto-Connect        │
+│       Name            Type         Endpoint            DNS       Auto        │
 │                                                                              │
-│  >   mullvad-se        WireGuard   185.65.135.170:51820      true            │
-│      work              OPENCONNECT vpn.example.com           false           │
+│  >  mullvad-se     WireGuard  185.65.135.170:51820   Custom      true        │
+│     work           OPENCONNECT vpn.example.com       None        false       │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -288,6 +289,27 @@ profile name can be trusted to tell you. WireGuard keeps it per peer, so a
 config with several peers shows the first and a count of the rest
 (`10.0.0.1:51820 +2`); VPN plugins bury it in a plugin-specific field, and one
 netpala does not recognise shows a blank rather than a guess.
+
+#### The tunnel's DNS
+
+`d` opens the same picker the Known Networks pane uses, pointed at the VPN
+profile. A tunnel carries its own resolvers — a provider's config almost always
+sets them — and **while the tunnel is up those are what the machine resolves
+through**, not the ones on the network underneath. So they need to be reachable
+and visible from the row that owns them.
+
+Two differences from the wireless picker:
+
+- The empty option is **None**, not DHCP. Nothing hands out resolvers inside a
+  tunnel; the row means "this profile pins none of its own", and the machine
+  goes on using whatever the underlying network supplies.
+- Applying to a **live** tunnel takes it down and brings it back up, because
+  NetworkManager reads the profile when the tunnel comes up. Nothing else
+  rewrites `resolv.conf` for an already-running tunnel. Your Wi-Fi is not
+  touched.
+
+Choosing DNSCrypt starts the local proxy the same way it does for a network —
+the proxy has to be listening whoever is going to send it queries.
 
 Auto-connect writes `connection.autoconnect` on the profile. For a `wireguard`
 profile this behaves like any other device connection. For a `vpn` plugin
@@ -754,6 +776,8 @@ Colors can be specified as:
   WireGuard and VPN-plugin profiles, with the tunnel endpoint shown
 - Import a `wg-quick` WireGuard config, with a summary of what it routes and
   what NetworkManager cannot carry over
+- Per-tunnel DNS provider switcher, since a tunnel's own resolvers are what the
+  machine uses while it is up
 - Add & connect to:
   - WPA-PSK
   - WPA-SAE

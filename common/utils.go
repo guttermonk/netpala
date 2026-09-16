@@ -201,10 +201,11 @@ func FormatStationData(devices []Device) [][]string {
 func FormatVpnData(vpns []VpnConnection) [][]string {
 	data := [][]string{
 		// Type is fixed at the longest plugin name netpala can produce,
-		// OPENCONNECT at 11, plus a space. Name and Endpoint split what is
+		// OPENCONNECT at 11, plus a space; DNS at "Cloudflare" plus one, the
+		// same as the known-networks table. Name and Endpoint split what is
 		// left, since both hold arbitrary-length text and neither deserves the
 		// slack more than the other.
-		padHeaders([]string{"", "Name", "Type", "Endpoint", "Auto"}, []int{5, -1, 12, -1, 8}), {""},
+		padHeaders([]string{"", "Name", "Type", "Endpoint", "DNS", "Auto"}, []int{5, -1, 12, -1, 11, 8}), {""},
 	}
 	for _, vpn := range vpns {
 		state := "     "
@@ -212,7 +213,8 @@ func FormatVpnData(vpns []VpnConnection) [][]string {
 			state = "  >  "
 		}
 
-		row := []string{state, vpn.Name, vpn.ConnType, vpn.Endpoint, strconv.FormatBool(vpn.AutoConnect)}
+		row := []string{state, vpn.Name, vpn.ConnType, vpn.Endpoint,
+			VpnDNSLabel(vpn.DNSMode), strconv.FormatBool(vpn.AutoConnect)}
 		for i := range row {
 			if lipgloss.Width(row[i]) > lipgloss.Width(data[0][i]) {
 				row[i] = row[i][:max(0, lipgloss.Width(data[0][i])-3)] + "..."
