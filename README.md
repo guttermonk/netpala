@@ -286,6 +286,12 @@ shows as `Cloudf...`. That is the cost of the even split rather than a bug; at
 85 columns and up everything fits. Cells truncate and never wrap, because the
 layout budgets exactly one row per network.
 
+The auto-connect column is headed `Auto` on a narrow terminal and
+`Auto-Connect` from 108 columns up, where its column can hold the full word.
+Headers are shortened rather than left to overflow for the same reason: lipgloss
+*wraps* a header that does not fit, and a second header row would push the
+bottom of the view off the screen.
+
 ### VPN Pane
 
 Lists the saved NetworkManager profiles whose type is `vpn` or `wireguard`, and

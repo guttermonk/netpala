@@ -318,6 +318,62 @@ func TestDetailColumnsAreEqual(t *testing.T) {
 	}
 }
 
+// lipgloss wraps a header that does not fit its column rather than truncating
+// it, and a wrapped header costs a whole extra row that the layout has not
+// budgeted. No header may ever be wider than its own column.
+func TestNoHeaderIsWiderThanItsColumn(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	// 66 is the narrowest terminal where every header still fits its column.
+	// Below that the equal splits squeeze "Security" under its own 8
+	// characters and it wraps -- nothing to fix, since the status bar alone
+	// needs 80 columns for the VPN pane, so the view is already unusable.
+	for _, w := range []int{66, 80, 85, 100, 107, 108, 120, 140, 200} {
+		SetWindowSizeForTest(w, 40)
+
+		for name, header := range map[string][]string{
+			"known":    FormatKnownNetworksData(sampleNetworks(), 0, 3)[0],
+			"vpn":      FormatVpnData(sampleVpns())[0],
+			"scanned":  FormatScannedNetworksData(nil, 0, 0)[0],
+			"security": FormatSecurityData(nil)[0],
+		} {
+			for i, cell := range header {
+				if strings.Contains(cell, "\n") {
+					t.Errorf("width %d: %s header %d wrapped onto a second line: %q",
+						w, name, i, cell)
+				}
+			}
+		}
+	}
+}
+
+// The auto-connect column is titled in full where it fits and shortened where
+// it does not, so the header never wraps and never loses meaning needlessly.
+func TestAutoHeaderAdaptsToItsColumn(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{
+		{80, "Auto"},
+		{100, "Auto"},
+		{107, "Auto"},
+		{108, "Auto-Connect"}, // the column reaches 12 here
+		{140, "Auto-Connect"},
+		{200, "Auto-Connect"},
+	} {
+		SetWindowSizeForTest(tc.width, 40)
+		if got := autoHeader(); got != tc.want {
+			t.Errorf("width %d: autoHeader() = %q, want %q", tc.width, got, tc.want)
+		}
+		// Whichever form it picks has to fit.
+		if got, col := lipgloss.Width(autoHeader()), knownWidths()[6]; got > col {
+			t.Errorf("width %d: header is %d wide, column is %d", tc.width, got, col)
+		}
+	}
+}
+
 // Below the threshold the cells truncate. That is the accepted cost of an even
 // split, but it must stay a truncation -- a cell that wrapped would take a
 // second line, and the layout budgets exactly one row per network.

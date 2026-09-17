@@ -345,16 +345,36 @@ func knownWidths() []int {
 	return widths
 }
 
+// autoHeader is the auto-connect column's title, in full where the column can
+// hold it and shortened where it cannot.
+//
+// Not a cosmetic choice. padHeaders renders a header inside a style of exactly
+// the column's width, and lipgloss *wraps* text that does not fit rather than
+// truncating it -- "Auto-Connect" in an 8-wide column becomes two lines. The
+// layout budgets one row per network, so a wrapped header pushes the bottom of
+// the view off the screen. Shortening is the only option that keeps the row
+// count fixed.
+//
+// "Auto" is what the status bar calls the key, so the short form is not a
+// coinage the user has to decode.
+func autoHeader() string {
+	const full = "Auto-Connect"
+
+	widths := knownWidths()
+	if len(widths) < 7 {
+		return "Auto"
+	}
+	if widths[6] >= lipgloss.Width(full) {
+		return full
+	}
+	return "Auto"
+}
+
 func FormatKnownNetworksData(networks []KnownNetwork, selectedRow int, height int) [][]string {
 	base := [][]string{
 		// Name takes the first third; the six detail columns divide the rest
-		// equally. See knownWidths.
-		//
-		// "Auto" rather than "Auto-Connect": padHeaders renders a header
-		// centred in exactly its column and puts no gap between columns, so a
-		// label that fills its width runs straight into the next one. It is
-		// also what the status bar calls the key.
-		padHeaders([]string{"", "Name", "Security", "DNS", "MAC", "Hidden", "Auto", "Signal"},
+		// equally. See knownWidths and autoHeader.
+		padHeaders([]string{"", "Name", "Security", "DNS", "MAC", "Hidden", autoHeader(), "Signal"},
 			knownWidths()), {""},
 	}
 	window := FormatArrays(networks, selectedRow, height)
