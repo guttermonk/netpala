@@ -13,12 +13,16 @@ type Confirmation struct {
 	Message string
 	Value   bool
 	Colors  config.Colors
+	// Keys is the user's navigation configuration, honoured here as it is in
+	// the pickers, so a rebound Up/Down moves between the buttons.
+	Keys config.KeyBindings
 }
 
-func ModelConfirmation(colors config.Colors) Confirmation {
+func ModelConfirmation(colors config.Colors, keys config.KeyBindings) Confirmation {
 	return Confirmation{
 		Value:  false,
 		Colors: colors,
+		Keys:   keys,
 	}
 }
 func (m Confirmation) Init() tea.Cmd {
@@ -26,22 +30,39 @@ func (m Confirmation) Init() tea.Cmd {
 }
 
 func (m Confirmation) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
-	// Handle global key presses for focus switching and quitting first.
-	switch key := msg.(type) {
-	case tea.KeyMsg:
-		switch key.String() {
-		case "esc", "ctrl+c", "enter":
-			return m, func() tea.Msg { return common.SubmitConfirmationMsg{Value: m.Value} }
-		case "tab", "right":
-			m.Value = true
-		case "shift+tab", "left":
-			m.Value = false
-		}
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
 	}
 
-	return m, cmd
+	switch key.String() {
+	case "enter":
+		return m, func() tea.Msg { return common.SubmitConfirmationMsg{Value: m.Value} }
+
+	case "esc", "ctrl+c":
+		// Always no, whichever button the highlight happens to be on.
+		//
+		// Escape used to submit the current selection, so backing out of a
+		// consent prompt after tabbing to Confirm agreed to it -- which for
+		// these prompts means starting something that changes where the
+		// machine's traffic goes.
+		return m, func() tea.Msg { return common.SubmitConfirmationMsg{Value: false} }
+
+	case "left":
+		m.Value = false
+		return m, nil
+	case "right":
+		m.Value = true
+		return m, nil
+	}
+
+	// The buttons sit side by side, so "forward" is Confirm and "back" is
+	// Cancel. There is no text field here, so the configured keys always
+	// apply -- nothing can be meant as typing.
+	if d := navDelta(m.Keys, key, false); d != 0 {
+		m.Value = d > 0
+	}
+	return m, nil
 }
 
 // confirmWidth is the popup's content width. Wide enough that a paragraph of
@@ -57,27 +78,8 @@ func (m Confirmation) View() string {
 		Padding(0, 1).
 		Width(confirmWidth)
 
-	inactiveBorderStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(m.Colors.Inactive)).
-		Align(lipgloss.Center).
-		Padding(0, 3).
-		Width(18)
-
-	activeBorderStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(m.Colors.ActiveText)).
-		Align(lipgloss.Center).
-		Padding(0, 3).
-		Width(18)
-
-	confirmButton := inactiveBorderStyle.Render("Confirm")
-	cancelButton := activeBorderStyle.Render("Cancel")
-
-	if m.Value {
-		confirmButton = activeBorderStyle.Render("Confirm")
-		cancelButton = inactiveBorderStyle.Render("Cancel")
-	}
+	cancelButton := renderButton(m.Colors, "Cancel", !m.Value)
+	confirmButton := renderButton(m.Colors, "Confirm", m.Value)
 
 	// A one-line question reads best centred, but centring several paragraphs
 	// leaves both edges ragged and is genuinely hard to read - which matters
@@ -95,12 +97,18 @@ func (m Confirmation) View() string {
 
 	// Centred explicitly: a full-width left-aligned message sets the block
 	// width, which would otherwise pull the buttons over to the left with it.
-	buttons := lipgloss.NewStyle().
+	buttons := renderButtonRow(confirmWidth-2, cancelButton, confirmButton)
+
+	// Naming the keys is the other half of honouring them: someone who rebound
+	// Up and Down has no way to learn from the popup that their own keys work
+	// here, and the arrows are not what they reach for.
+	hint := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(m.Colors.Placeholder)).
 		Width(confirmWidth - 2).
 		Align(lipgloss.Center).
-		Render(lipgloss.JoinHorizontal(lipgloss.Center, cancelButton, confirmButton))
+		Render(navHint(m.Keys) + " choose · ⤶ accept · ⎋ cancel")
 
 	return containerStyle.Render(
-		lipgloss.JoinVertical(lipgloss.Left, message, "", buttons),
+		lipgloss.JoinVertical(lipgloss.Left, message, "", buttons, "", hint),
 	)
 }

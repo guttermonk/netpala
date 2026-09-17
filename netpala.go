@@ -236,7 +236,7 @@ func (m *NetpalaData) openStartConfirmation(svc common.SecurityService) {
 	m.PopupState = 1
 	m.confirmAction = confirmStartService
 	m.pendingStartUnit = svc.Unit
-	m.Confirmation = models.ModelConfirmation(m.Colors)
+	m.Confirmation = models.ModelConfirmation(m.Colors, m.Config.KeyBindings)
 	m.Confirmation.Message = svc.Confirm
 	m.Overlay = updateOverlayModel(*m, &m.Confirmation)
 }
@@ -302,7 +302,7 @@ func (m *NetpalaData) openDeleteVpnConfirmation(vpn common.VpnConnection) {
 	m.PopupState = 1
 	m.confirmAction = confirmDeleteVpn
 	m.VpnTarget = vpn
-	m.Confirmation = models.ModelConfirmation(m.Colors)
+	m.Confirmation = models.ModelConfirmation(m.Colors, m.Config.KeyBindings)
 
 	msg := fmt.Sprintf("Are you sure you want to delete the VPN connection '%s'?\n", vpn.Name)
 	if vpn.ConnType == "WireGuard" {
@@ -365,7 +365,7 @@ func (m *NetpalaData) openApplyResolverConfirmation(svc common.SecurityService) 
 	m.PopupState = 1
 	m.confirmAction = confirmApplyResolver
 	m.pendingStartUnit = svc.Unit
-	m.Confirmation = models.ModelConfirmation(m.Colors)
+	m.Confirmation = models.ModelConfirmation(m.Colors, m.Config.KeyBindings)
 	m.Confirmation.Message = fmt.Sprintf(
 		"Resolve %s through %s?\n\n"+
 			"%s is starting either way. This is only about whether "+
@@ -735,8 +735,8 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle the confirmation popup state
 		switch msg := msg.(type) {
 		case common.SubmitConfirmationMsg:
-			m.PopupState = -1                                   // Exit popup
-			m.Confirmation = models.ModelConfirmation(m.Colors) // Reset
+			m.PopupState = -1                                                         // Exit popup
+			m.Confirmation = models.ModelConfirmation(m.Colors, m.Config.KeyBindings) // Reset
 
 			action := m.confirmAction
 			unit := m.pendingStartUnit
@@ -1161,7 +1161,7 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.PopupState = 1
 				m.confirmAction = confirmDeleteNetwork
-				m.Confirmation = models.ModelConfirmation(m.Colors)
+				m.Confirmation = models.ModelConfirmation(m.Colors, m.Config.KeyBindings)
 				m.Confirmation.Message = fmt.Sprintf("Are you sure you want to delete the known network '%s'?\n", m.SelectedNetwork.SSID)
 
 				m.Overlay = updateOverlayModel(m, &m.Confirmation)

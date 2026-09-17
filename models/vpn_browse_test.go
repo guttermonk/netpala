@@ -71,6 +71,94 @@ func TestPathStageFocusRing(t *testing.T) {
 	}
 }
 
+// The import popup is a popup like any other, so the user's own Up/Down move
+// through it rather than only the arrows.
+func TestImportHonoursReboundKeys(t *testing.T) {
+	m := ModelVpnImport(config.DefaultColors(), colemakKeys()) // Up = i, Down = e
+
+	// From the field, the rebound keys are typing -- "e" is a letter someone
+	// putting a path in needs.
+	next, _ := m.Update(keyOf("e"))
+	if got := next.(VpnImport); got.Focus != focusPathField || got.Path.Value() != "e" {
+		t.Errorf("Focus = %d, value = %q; want the letter typed into the field",
+			got.Focus, got.Path.Value())
+	}
+
+	// Once the field is left, they navigate.
+	onBrowse, _ := m.Update(tab())
+	next, _ = onBrowse.(VpnImport).Update(keyOf("e"))
+	if got := next.(VpnImport).Focus; got != focusOpen {
+		t.Errorf("Focus = %d, want the rebound Down key to move to Open", got)
+	}
+	next, _ = onBrowse.(VpnImport).Update(keyOf("i"))
+	if got := next.(VpnImport).Focus; got != focusPathField {
+		t.Errorf("Focus = %d, want the rebound Up key to move back to the field", got)
+	}
+}
+
+// The summary has no field, so the configured keys always apply there.
+func TestSummaryHonoursReboundKeys(t *testing.T) {
+	dir := confDir(t)
+
+	m := ModelVpnImport(config.DefaultColors(), colemakKeys())
+	m.Path.SetValue(filepath.Join(dir, "mullvad-se.conf"))
+	next, _ := m.Update(enter())
+
+	moved, _ := next.(VpnImport).Update(keyOf("e"))
+	if got := moved.(VpnImport).Focus; got != focusCancelImport {
+		t.Errorf("Focus = %d, want the rebound key to reach Cancel", got)
+	}
+}
+
+// The browser is a list, and it has to move on the same keys as every other
+// list in the program.
+func TestBrowserHonoursReboundKeys(t *testing.T) {
+	m := ModelVpnImport(config.DefaultColors(), colemakKeys())
+
+	down := m.Picker.KeyMap.Down
+	if !down.Enabled() {
+		t.Fatal("the browser has no Down binding")
+	}
+	if !containsKey(down.Keys(), "e") {
+		t.Errorf("browser Down keys = %v, want the configured 'e'", down.Keys())
+	}
+	if !containsKey(m.Picker.KeyMap.Up.Keys(), "i") {
+		t.Errorf("browser Up keys = %v, want the configured 'i'", m.Picker.KeyMap.Up.Keys())
+	}
+	// The arrows survive, because they always work in a popup.
+	if !containsKey(down.Keys(), "down") {
+		t.Errorf("browser Down keys = %v, want the arrow kept", down.Keys())
+	}
+}
+
+func containsKey(keys []string, want string) bool {
+	for _, k := range keys {
+		if k == want {
+			return true
+		}
+	}
+	return false
+}
+
+// Left and right belong to the text cursor while the field is being edited; a
+// mistyped path could not be corrected in the middle otherwise.
+func TestArrowsEditTextRatherThanMoveFocus(t *testing.T) {
+	m := freshImport()
+	m.Path.SetValue("/etc/wg0.conf")
+
+	next, _ := m.Update(keyOf("left"))
+	if got := next.(VpnImport).Focus; got != focusPathField {
+		t.Errorf("Focus = %d, want left to stay in the field while typing", got)
+	}
+
+	// Once on a button they move between buttons again.
+	onBrowse, _ := m.Update(tab())
+	next, _ = onBrowse.(VpnImport).Update(keyOf("right"))
+	if got := next.(VpnImport).Focus; got != focusOpen {
+		t.Errorf("Focus = %d, want right to move to Open", got)
+	}
+}
+
 // Keystrokes must reach the field only while it holds focus, or pressing "b"
 // on the Browse button types a letter instead.
 func TestTypingOnlyReachesTheFocusedField(t *testing.T) {

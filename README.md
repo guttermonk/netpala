@@ -682,6 +682,27 @@ before the unit is started. Empty means start it straight away. **Only starting
 is gated** — turning something off never asks, since a prompt between you and
 switching a thing back off is exactly the wrong place for one.
 
+```
+┌────────────────────────────────────────────────────────────┐
+│ Make this machine an I2P router?                           │
+│                                                            │
+│ Shared: your IP address, which every I2P peer you connect  │
+│ to can see.                                                │
+│                                                            │
+│          ┏━━━━━━━━━━━━━━━━┓    ┌────────────────┐          │
+│          ┃     Cancel     ┃    │    Confirm     │          │
+│          ┗━━━━━━━━━━━━━━━━┛    └────────────────┘          │
+│                                                            │
+│              k/j choose · ⤶ accept · ⎋ cancel              │
+└────────────────────────────────────────────────────────────┘
+```
+
+The prompt moves on **your configured Up/Down keys**, not just the arrows, and
+the footer names whichever keys those are. The highlight starts on Cancel and
+the focused button has a heavy border, so what Enter will do is legible without
+depending on telling two colours apart. `⎋` always declines, whichever button
+is highlighted.
+
 It is free text in config rather than netpala recognising particular unit
 names: what is worth consenting to depends on how the service is configured on
 *your* machine, which netpala cannot infer.

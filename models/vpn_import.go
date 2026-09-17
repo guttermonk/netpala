@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/filepicker"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -77,7 +78,7 @@ func ModelVpnImport(colors config.Colors, keys config.KeyBindings) VpnImport {
 		Stage:  VpnImportPath,
 		Focus:  focusPathField,
 		Path:   input,
-		Picker: newFilePicker(colors),
+		Picker: newFilePicker(colors, keys),
 		Colors: colors,
 		Keys:   keys,
 	}
@@ -88,8 +89,18 @@ func ModelVpnImport(colors config.Colors, keys config.KeyBindings) VpnImport {
 // Only .conf is selectable, because that is what wg-quick writes and what every
 // provider ships. Anything else is shown greyed out rather than hidden, so a
 // file with an unexpected name is visible and can be typed in by hand.
-func newFilePicker(colors config.Colors) filepicker.Model {
+func newFilePicker(colors config.Colors, keys config.KeyBindings) filepicker.Model {
 	fp := filepicker.New()
+
+	// The browser is a list like any other, so the user's own Up/Down move
+	// through it. The arrows are kept alongside because they always work in a
+	// popup, and the picker's other bindings (h/l, backspace) are left as they
+	// are -- they move between directories rather than between rows.
+	km := filepicker.DefaultKeyMap()
+	km.Up = key.NewBinding(key.WithKeys(append([]string{"up"}, keys.Up.Keys...)...))
+	km.Down = key.NewBinding(key.WithKeys(append([]string{"down"}, keys.Down.Keys...)...))
+	fp.KeyMap = km
+
 	fp.AllowedTypes = []string{wgConfExt}
 	fp.DirAllowed = false
 	fp.FileAllowed = true
@@ -143,7 +154,7 @@ func (m VpnImport) startDir() string {
 
 // openBrowser switches to the file browser and points it somewhere useful.
 func (m *VpnImport) openBrowser() tea.Cmd {
-	m.Picker = newFilePicker(m.Colors)
+	m.Picker = newFilePicker(m.Colors, m.Keys)
 	m.Picker.CurrentDirectory = m.startDir()
 	m.Stage = VpnImportBrowse
 	m.ErrText = ""
@@ -192,17 +203,6 @@ func (m VpnImport) updatePath(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "esc", "ctrl+c":
 		return m, func() tea.Msg { return common.ExitFormMsg{} }
 
-	case "tab", "shift+tab", "left", "right":
-		m.Focus = stepFocus(m.Focus, key.String(), 3)
-		// The field only takes keystrokes while it holds the focus, so that
-		// "b" on the Browse button is a keypress rather than text.
-		if m.Focus == focusPathField {
-			m.Path.Focus()
-		} else {
-			m.Path.Blur()
-		}
-		return m, nil
-
 	case "enter":
 		if m.Focus == focusBrowse {
 			return m, m.openBrowser()
@@ -211,12 +211,45 @@ func (m VpnImport) updatePath(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.Focus == focusPathField {
+	typing := m.Focus == focusPathField
+
+	// Left and right move between the buttons, but only once the field has
+	// been left. While it holds focus they belong to the text cursor, or a
+	// mistyped path could not be corrected in the middle.
+	if !typing {
+		switch key.String() {
+		case "left":
+			return m.moveFocus(-1), nil
+		case "right":
+			return m.moveFocus(1), nil
+		}
+	}
+
+	// navDelta honours the user's own Up/Down, and ignores them while the
+	// field is focused so those letters stay typeable.
+	if d := navDelta(m.Keys, key, typing); d != 0 {
+		return m.moveFocus(d), nil
+	}
+
+	if typing {
 		var cmd tea.Cmd
 		m.Path, cmd = m.Path.Update(msg)
 		return m, cmd
 	}
 	return m, nil
+}
+
+// moveFocus steps around the path stage's three positions, keeping the text
+// field accepting input only while it holds the focus -- otherwise "b" on the
+// Browse button would type a letter instead of pressing it.
+func (m VpnImport) moveFocus(delta int) VpnImport {
+	m.Focus = stepFocus(m.Focus, delta, 3)
+	if m.Focus == focusPathField {
+		m.Path.Focus()
+	} else {
+		m.Path.Blur()
+	}
+	return m
 }
 
 func (m VpnImport) updateBrowse(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -271,8 +304,11 @@ func (m VpnImport) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Path.Focus()
 		return m, nil
 
-	case "tab", "shift+tab", "left", "right":
-		m.Focus = stepFocus(m.Focus, key.String(), 2)
+	case "left":
+		m.Focus = stepFocus(m.Focus, -1, 2)
+		return m, nil
+	case "right":
+		m.Focus = stepFocus(m.Focus, 1, 2)
 		return m, nil
 
 	case "enter":
@@ -288,15 +324,16 @@ func (m VpnImport) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return common.SubmitVpnImportMsg{Config: cfg, ID: id, Ifname: ifname}
 		}
 	}
+
+	// No text field on this stage, so the configured keys always apply.
+	if d := navDelta(m.Keys, key, false); d != 0 {
+		m.Focus = stepFocus(m.Focus, d, 2)
+	}
 	return m, nil
 }
 
 // stepFocus moves around a ring of n positions.
-func stepFocus(current int, key string, n int) int {
-	delta := 1
-	if key == "shift+tab" || key == "left" {
-		delta = -1
-	}
+func stepFocus(current, delta, n int) int {
 	return (current + delta + n) % n
 }
 
@@ -341,45 +378,12 @@ func (m VpnImport) alertStyle(inner int) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(m.Colors.ErrorText)).Width(inner)
 }
 
-// button renders one of the popup's buttons, highlighted when it holds focus.
-//
-// The focused one gets a heavier border as well as a different colour. Colour
-// alone would be the only signal otherwise, which is no signal at all to
-// someone whose terminal palette flattens the two or who cannot easily tell
-// them apart.
 func (m VpnImport) button(label string, focused bool) string {
-	style := lipgloss.NewStyle().
-		Align(lipgloss.Center).
-		Padding(0, 2).
-		Width(16)
-
-	if focused {
-		return style.
-			Border(lipgloss.ThickBorder()).
-			BorderForeground(lipgloss.Color(m.Colors.ActiveText)).
-			Foreground(lipgloss.Color(m.Colors.ActiveText)).
-			Bold(true).
-			Render(label)
-	}
-	return style.
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(m.Colors.Inactive)).
-		Foreground(lipgloss.Color(m.Colors.Primary)).
-		Render(label)
+	return renderButton(m.Colors, label, focused)
 }
 
-// buttonRow centres a set of buttons in the popup, with a gap so they do not
-// read as one wide box.
 func (m VpnImport) buttonRow(inner int, buttons ...string) string {
-	spaced := make([]string, 0, len(buttons)*2-1)
-	for i, b := range buttons {
-		if i > 0 {
-			spaced = append(spaced, "    ")
-		}
-		spaced = append(spaced, b)
-	}
-	return lipgloss.NewStyle().Width(inner).Align(lipgloss.Center).
-		Render(lipgloss.JoinHorizontal(lipgloss.Top, spaced...))
+	return renderButtonRow(inner, buttons...)
 }
 
 func (m VpnImport) pathRows(inner int) []string {
