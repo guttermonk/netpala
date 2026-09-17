@@ -260,9 +260,28 @@ func ServiceStateLabel(s SecurityService) string {
 	return s.State
 }
 
+// markerWidth is the blank column carrying the ">" that marks a row as live.
+const markerWidth = 5
+
+// thirds divides a section into three equal content columns, giving any
+// leftover columns to the last one so the row still fills the width exactly.
+func thirds() (a, b, c int) {
+	total := max(WindowDimensions().Width-2, 3)
+	third := total / 3
+	return third, third, total - 2*third
+}
+
 func FormatSecurityData(services []SecurityService) [][]string {
+	// Three equal columns, matching the New Networks pane so the two line up
+	// with each other. The marker lives inside the first third rather than
+	// beside it, which is what keeps the column boundaries on the same
+	// fractions in both panes.
+	service, unit, state := thirds()
+	service = max(service-markerWidth, lipgloss.Width("Service"))
+
 	data := [][]string{
-		padHeaders([]string{"", "Service", "Unit", "State"}, []int{5, 16, -1, 16}), {""},
+		padHeaders([]string{"", "Service", "Unit", "State"},
+			[]int{markerWidth, service, unit, state}), {""},
 	}
 	for _, s := range services {
 		marker := "     "
@@ -324,13 +343,13 @@ func FormatKnownNetworksData(networks []KnownNetwork, selectedRow int, height in
 }
 
 func FormatScannedNetworksData(networks []ScannedNetwork, selectedRow int, height int) [][]string {
-	totalWidth := WindowDimensions().Width - 2
-
-	signalWidth := totalWidth / 4
-	securityWidth := (totalWidth / 4) + totalWidth%4
+	// Three equal columns, matching the Security pane. This list is for
+	// discovery rather than for acting on, so there is nothing here that
+	// deserves the slack the way Name does in the known-networks table.
+	name, security, signal := thirds()
 
 	data := [][]string{
-		padHeaders([]string{"Name", "Security", "Signal"}, []int{-1, securityWidth, signalWidth}), {""},
+		padHeaders([]string{"Name", "Security", "Signal"}, []int{name, security, signal}), {""},
 	}
 	window := FormatArrays(networks, selectedRow, height)
 	for _, n := range window {

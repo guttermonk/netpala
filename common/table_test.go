@@ -3,6 +3,8 @@ package common
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func sampleNetworks() []KnownNetwork {
@@ -117,6 +119,87 @@ func TestHeadersDoNotTouchTheNextColumn(t *testing.T) {
 						w, name, strings.TrimSpace(left), strings.TrimSpace(right))
 				}
 			}
+		}
+	}
+}
+
+// columnEdges is where each column ends, measured from the left of the pane.
+func columnEdges(header []string) []int {
+	var edges []int
+	at := 0
+	for _, cell := range header {
+		at += lipgloss.Width(cell)
+		edges = append(edges, at)
+	}
+	return edges
+}
+
+// New Networks and Security are read one above the other, so their columns
+// have to break on the same fractions. Any two sets of widths that merely
+// look similar drift apart at some terminal size.
+func TestScannedAndSecurityBreakOnTheSameThirds(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	// Below 38 columns the marker no longer fits inside the first third and
+	// the Service floor takes over, so the two stop agreeing. Nothing in this
+	// UI is usable at that size -- the status bar alone needs more.
+	for _, w := range []int{38, 40, 60, 80, 100, 120, 140} {
+		SetWindowSizeForTest(w, 40)
+
+		scanned := columnEdges(FormatScannedNetworksData(nil, 0, 0)[0])
+		security := columnEdges(FormatSecurityData(nil)[0])
+
+		// Security carries a leading marker column, so its content columns are
+		// the last three; the marker is absorbed into the first third.
+		if len(scanned) != 3 || len(security) != 4 {
+			t.Fatalf("width %d: %d scanned columns, %d security", w, len(scanned), len(security))
+		}
+		for i := range scanned {
+			if scanned[i] != security[i+1] {
+				t.Errorf("width %d: column %d ends at %d in New Networks and %d in Security",
+					w, i, scanned[i], security[i+1])
+			}
+		}
+	}
+}
+
+// Equal thirds, with the remainder going to the last column so the row still
+// fills the pane exactly rather than leaving a ragged right edge.
+func TestThirdsFillTheWidthExactly(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	for _, w := range []int{60, 79, 80, 81, 100, 137} {
+		SetWindowSizeForTest(w, 40)
+
+		total := 0
+		for _, cell := range FormatScannedNetworksData(nil, 0, 0)[0] {
+			total += lipgloss.Width(cell)
+		}
+		if want := w - 2; total != want {
+			t.Errorf("width %d: columns total %d, want %d", w, total, want)
+		}
+
+		a, b, c := thirds()
+		if a != b {
+			t.Errorf("width %d: first two thirds differ (%d, %d)", w, a, b)
+		}
+		if c-a > 2 || c < a {
+			t.Errorf("width %d: last third is %d against %d for the others", w, c, a)
+		}
+	}
+}
+
+// The marker eats into the first third, so on a narrow terminal that column
+// can be squeezed below its own header and wrap onto a second line -- which
+// the layout, budgeting one row per service, has no room for.
+func TestSecurityServiceColumnNeverFallsBelowItsHeader(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	for _, w := range []int{20, 30, 40, 60, 80} {
+		SetWindowSizeForTest(w, 40)
+		header := FormatSecurityData(nil)[0]
+		if got := lipgloss.Width(header[1]); got < lipgloss.Width("Service") {
+			t.Errorf("width %d: Service column is %d, narrower than its header", w, got)
 		}
 	}
 }

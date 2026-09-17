@@ -502,12 +502,17 @@ transparent Tor proxy, a local DNSCrypt daemon.
 
 ```
 ┌ Security ────────────────────────────────────────────────────────────────────┐
-│         Service                       Unit                        State      │
+│            Service                  Unit                     State           │
 │                                                                              │
-│  >        Tor                tor-transparent.service              active     │
-│  >      DNSCrypt             dnscrypt-proxy2.service             running     │
+│              Tor          tor-transparent.service            active          │
+│  >        DNSCrypt        dnscrypt-proxy2.service           running          │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The three columns are equal thirds of the pane, breaking on the same fractions
+as the New Networks list above it so the two line up when read together. The
+`>` marker sits *inside* the first third rather than beside it, which is what
+keeps those boundaries in step.
 
 **The pane hides itself when none of the configured units are installed**, so
 it costs nothing if you don't use it. I2P is listed by default too:
