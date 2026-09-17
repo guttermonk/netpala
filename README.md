@@ -390,19 +390,58 @@ it as a NetworkManager profile. The profile is named after the file, the way
 `wg-quick` derives an interface from it: `mullvad-se.conf` becomes the
 `mullvad-se` tunnel.
 
-It reads the file first and shows what is in it before writing anything:
+Type the path, or browse for it:
 
 ```
-                     Import mullvad-se?
+┌──────────────────────────────────────────────────────────────┐
+│                  Import a WireGuard config                   │
+│                                                              │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │ ~/mullvad-se.conf                                        │ │
+│ └──────────────────────────────────────────────────────────┘ │
+│                                                              │
+│           ┌────────────────┐    ┏━━━━━━━━━━━━━━━━┓           │
+│           │     Browse     │    ┃      Open      ┃           │
+│           └────────────────┘    ┗━━━━━━━━━━━━━━━━┛           │
+│                                                              │
+│                 ⇥ move · ⤶ choose · ⎋ cancel                 │
+└──────────────────────────────────────────────────────────────┘
+```
 
-  Interface   mullvad-se
-  Endpoint    185.65.135.170:51820
-  Routes      all traffic from this machine
-  DNS         10.64.0.1
+Tab moves between the field and the two buttons; **the focused one has a heavy
+border** as well as a different colour, so which key does what is visible
+without relying on being able to tell two shades apart. The field holds focus
+when the popup opens, so typing a path you already know still works
+immediately.
 
-The private key is stored in the profile, readable by root.
-NetworkManager cannot carry over: postup = ..., table = off
-Imported switched off; connect it from the pane.
+**Browse** opens a file list. It starts beside whatever is already typed — so
+correcting a nearly-right path does not send you back to the top — and
+otherwise at your home directory, where a browser download lands. Only `.conf`
+is selectable; anything else is listed but greyed out, so a file with an
+unexpected name is still visible and can be typed in by hand. `⌫` and `←` go up
+a directory, `⎋` goes back to typing.
+
+Either way it reads the file and shows what is in it before writing anything:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      Import mullvad-se?                      │
+│                                                              │
+│   Interface   mullvad-se                                     │
+│   Endpoint    185.65.135.170:51820                           │
+│   Routes      all traffic from this machine                  │
+│   DNS         10.64.0.1                                      │
+│                                                              │
+│ The private key is stored in the profile, readable by root.  │
+│ NetworkManager cannot carry over: postup = ..., table = off  │
+│ Imported switched off; connect it from the pane.             │
+│                                                              │
+│           ┏━━━━━━━━━━━━━━━━┓    ┌────────────────┐           │
+│           ┃     Import     ┃    │     Cancel     │           │
+│           ┗━━━━━━━━━━━━━━━━┛    └────────────────┘           │
+│                                                              │
+│           ⇥ move · ⤶ choose · ⎋ pick another file            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 Three things are worth knowing, and the summary says all of them:
