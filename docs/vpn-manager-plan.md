@@ -1,8 +1,13 @@
 # VPN Manager — plan
 
-Working notes for the `vpn-manager` branch, forked from `security-options` at
-`936b52f`. This is a design document, not a promise: the phases are ordered so
-each one is useful on its own and can be shipped without the ones after it.
+Working notes for the `vpn-manager` branch, forked from the tip of
+`security-options`. This is a design document, not a promise: the phases are
+ordered so each one is useful on its own and can be shipped without the ones
+after it.
+
+No commit hash here on purpose: both branches have been rewritten once already
+to take some real network names out of their history, and a hash written down
+in a file is wrong the moment that happens again.
 
 ---
 
