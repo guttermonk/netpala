@@ -220,16 +220,24 @@ func AddAndConnectEAPCmd(conn *dbus.Conn, config map[string]string, devicePath d
 }
 
 // ToggleVpnCmd activates or deactivates a VPN connection.
-func ToggleVpnCmd(conn *dbus.Conn, vpnPath dbus.ObjectPath, activePath dbus.ObjectPath, active bool) tea.Cmd {
+//
+// connect is the state being asked for, not the state the profile is in, which
+// matches ToggleVpnProviderCmd -- the two are called side by side off the same
+// key, and an inverted flag here deactivates a profile the user is trying to
+// bring up.
+func ToggleVpnCmd(conn *dbus.Conn, vpnPath dbus.ObjectPath, activePath dbus.ObjectPath, connect bool) tea.Cmd {
 	return func() tea.Msg {
 		nm := conn.Object(network.NMDest, dbus.ObjectPath(network.NMPath))
 		var call *dbus.Call
 		action := "activate" // For error message
 
-		if active {
+		if !connect {
 			// Deactivate using the *active* connection path
 			action = "deactivate"
-			if activePath == "/" { // Sanity check
+			// "" is an unset path and "/" is NetworkManager's empty one; the
+			// bus rejects both, the first as a malformed message rather than
+			// as an error naming the connection.
+			if activePath == "" || activePath == "/" {
 				return common.ErrMsg{Err: fmt.Errorf("cannot deactivate VPN: no active connection path found")}
 			}
 			activeConnObj := conn.Object(network.NMDest, activePath)
@@ -559,8 +567,8 @@ func SetVpnDnsCmd(
 		// is fully down leaves the old activation in place.
 		return tea.BatchMsg([]tea.Cmd{
 			tea.Sequence(
-				ToggleVpnCmd(conn, connectionPath, activePath, true),  // deactivate
-				ToggleVpnCmd(conn, connectionPath, activePath, false), // activate
+				ToggleVpnCmd(conn, connectionPath, activePath, false), // deactivate
+				ToggleVpnCmd(conn, connectionPath, activePath, true),  // activate
 				refresh,
 			),
 		})

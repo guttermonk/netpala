@@ -256,3 +256,21 @@ func TestSettingsRefusesAnEmptyConfig(t *testing.T) {
 		t.Error("a config with no peers and no address accepted")
 	}
 }
+
+// A profile that is not up has no active connection path, and the bus rejects
+// an empty one as a malformed message rather than as an error naming the
+// connection -- so the guard has to catch it here, where the message can say
+// which VPN it was.
+func TestToggleVpnRefusesToDeactivateWithoutAnActivePath(t *testing.T) {
+	for _, activePath := range []dbus.ObjectPath{"", "/"} {
+		msg := ToggleVpnCmd(nil, "/org/freedesktop/NetworkManager/Settings/8", activePath, false)()
+
+		err, ok := msg.(common.ErrMsg)
+		if !ok {
+			t.Fatalf("deactivating with activePath %q: got %#v, want an ErrMsg", activePath, msg)
+		}
+		if err.Err == nil {
+			t.Fatalf("deactivating with activePath %q: ErrMsg carries no error", activePath)
+		}
+	}
+}
