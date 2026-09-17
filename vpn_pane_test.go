@@ -180,3 +180,70 @@ func TestRemoveDoesNothingOnTheSecurityPane(t *testing.T) {
 		t.Error("remove issued a command on the Security pane")
 	}
 }
+
+func helpKey() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}
+}
+
+// The help popup is where the keys the status bar has no room for are written
+// down, so it has to open from every pane.
+func TestHelpOpensFromEveryPane(t *testing.T) {
+	for name, pane := range map[string]int{
+		"known":    common.PaneKnown,
+		"scanned":  common.PaneScanned,
+		"vpn":      common.PaneVPN,
+		"security": common.PaneSecurity,
+		"device":   common.PaneDevice,
+	} {
+		m := linkModel(false, []common.KnownNetwork{net("home", true, common.DNSModeDHCP)})
+		m.VpnProfiles = []common.VpnConnection{vpn("mullvad-se", false)}
+		m.rebuildVpnData()
+		m.selectedBox = pane
+		m = safeListener(m)
+
+		next, _ := m.Update(helpKey())
+		got := next.(NetpalaData)
+		if got.PopupState != 6 {
+			t.Errorf("%s: PopupState = %d, want the help popup", name, got.PopupState)
+		}
+		if got.HelpForm.Pane != pane {
+			t.Errorf("%s: help opened for pane %d, want %d", name, got.HelpForm.Pane, pane)
+		}
+	}
+}
+
+// And closing it puts you back where you were.
+func TestClosingHelpReturnsToThePane(t *testing.T) {
+	m := linkModel(false, []common.KnownNetwork{net("home", true, common.DNSModeDHCP)})
+	m.selectedBox = common.PaneKnown
+	m = safeListener(m)
+
+	next, _ := m.Update(helpKey())
+	m = next.(NetpalaData)
+
+	next, _ = m.Update(common.ExitFormMsg{})
+	got := next.(NetpalaData)
+	if got.PopupState != -1 {
+		t.Errorf("PopupState = %d, want the popup closed", got.PopupState)
+	}
+	if got.selectedBox != common.PaneKnown {
+		t.Errorf("selectedBox = %d, want the pane unchanged", got.selectedBox)
+	}
+}
+
+// "?" must not be swallowed by a pane action while the popup is open, and the
+// popup must not act on keys meant for it.
+func TestHelpDoesNotLeakKeysToThePane(t *testing.T) {
+	m := linkModel(false, []common.KnownNetwork{net("home", true, common.DNSModeDHCP)})
+	m.selectedBox = common.PaneKnown
+	m = safeListener(m)
+
+	next, _ := m.Update(helpKey())
+	m = next.(NetpalaData)
+
+	// "d" is the DNS key; while help is open it must not open the DNS picker.
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if got := next.(NetpalaData); got.PopupState != 6 {
+		t.Errorf("PopupState = %d, want help still open", got.PopupState)
+	}
+}

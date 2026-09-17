@@ -65,6 +65,15 @@ help = "DNS"
 keys = ["m"]
 help = "MAC"
 
+# Application - Show the keys the status bar has no room for.
+#
+# "?" rather than "h", which is already toggle_hidden. If you would rather have
+# h, move toggle_hidden to something else first — netpala does not stop you
+# binding one key to two actions, and the first match wins.
+[keybindings.help]
+keys = ["?"]
+help = "Help"
+
 # Actions - Import a wg-quick WireGuard config as a NetworkManager profile.
 # Works from any pane: the VPN pane hides itself while it is empty, which is
 # where you are when importing your first tunnel.

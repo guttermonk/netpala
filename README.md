@@ -240,6 +240,7 @@ windowrule = float 1, match:title com.omarchy.netpala
 - k / Up : Scroll up
 - s : Force scan
 - i : Import a WireGuard config
+- ? : Show all keys for the current section
 - q / Ctrl+C: Quit
 
 > `i` works from any pane, not just the VPN one — it has to, since the VPN pane
@@ -264,6 +265,65 @@ windowrule = float 1, match:title com.omarchy.netpala
 
 ---
 
+### The status bar and the help popup
+
+The layout budgets **exactly one row** for the status bar — a bar that wrapped
+would push the bottom of the device table off the screen. Known Networks had
+twelve keys to advertise and room for about nine, so the hints at the end were
+silently dropped, pane navigation among them.
+
+So the bar carries only what you need to find your way around and act on a row:
+
+```
+   k/↑ Up | j/↓ Down | ⤶/␣ Dis/Connect | ⇥ Next | ⇤ Prev | ? Help | q/^C Quit
+```
+
+Everything else is in `?`, listed for the section the cursor is in:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                             Keys                             │
+│                                                              │
+│   Known Networks                                             │
+│     ⤶/␣         Dis/Connect                                  │
+│     ⌫/⌦         Remove                                       │
+│     a           Auto                                         │
+│     h           Hidden                                       │
+│     d           DNS                                          │
+│     m           MAC                                          │
+│                                                              │
+│   Anywhere                                                   │
+│     s           Scan                                         │
+│     i           Import                                       │
+│                                                              │
+│   Getting around                                             │
+│     k/↑         Up                                           │
+│     j/↓         Down                                         │
+│     ⇥           Next                                         │
+│     ⇤           Prev                                         │
+│     q/^C        Quit                                         │
+│                                                              │
+│                           ⎋ close                            │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Grouped by what the keys act on, and **pane-specific**: the VPN section shows
+no Hidden or MAC, and Security shows only its toggle, because a key that does
+nothing here is worse than one that is not mentioned. `⎋`, `q`, `⤶` or `?`
+again closes it.
+
+> **`?`, not `h`** — `h` is already Toggle Hidden. `?` is also what `less`,
+> `vim` and most TUIs use. If you would rather have `h`, move `toggle_hidden`
+> to another key first:
+>
+> ```toml
+> [keybindings.toggle_hidden]
+> keys = ["H"]
+>
+> [keybindings.help]
+> keys = ["h"]
+> ```
+
 ### Pane layout
 
 Name takes the first third of the Known Networks pane and the six detail
@@ -283,11 +343,11 @@ pane:
 ```
 ┌ Known Networks ──────────────────────────────────────────────────────────────┐
 │             Name         Security    DNS      MAC    Hidden    Auto   Signal │
-│  >      home-wifi     wpa2-psk DNSCrypt  Stable    false    true    92%   │
+│  >        home-wifi      wpa2-psk DNSCrypt  Stable    false    true    92%   │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ New Networks ────────────────────────────────────────────────────────────────┐
 │             Name                  Security                   Signal          │
-│         cafe-guest             wpa2-psk                    65%            │
+│          cafe-guest               wpa2-psk                    65%            │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ Security ────────────────────────────────────────────────────────────────────┐
 │            Service                  Unit                     State           │
@@ -297,9 +357,9 @@ pane:
 
 ```
 ┌ Known Networks ──────────────────────────────────────────────────────────────┐
-│                    Name                  Security        DNS          MAC    …
+│             Name         Security    DNS      MAC    Hidden    Auto   Signal │
 │                                                                              │
-│  >             home-wifi              wpa2-psk     DNSCrypt      Stable   …
+│  >        home-wifi      wpa2-psk DNSCrypt  Stable    false    true    92%   │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -324,7 +384,7 @@ hides itself when there are none.
 ┌ Known Networks ──────────────────────────────────────────────────────────────┐
 │             Name         Security    DNS      MAC    Hidden    Auto   Signal │
 │                                                                              │
-│  >      home-wifi     wpa2-psk DNSCrypt  Stable    false    true    92%   │
+│  >        home-wifi      wpa2-psk DNSCrypt  Stable    false    true    92%   │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ Virtual Private Networks ────────────────────────────────────────────────────┐
 │             Name                Type            Endpoint       DNS     Auto  │
@@ -930,6 +990,10 @@ help = "MAC"
 [keybindings.import_vpn]
 keys = ["i"]
 help = "Import"
+
+[keybindings.help]
+keys = ["?"]
+help = "Help"
 
 # Application
 [keybindings.quit]

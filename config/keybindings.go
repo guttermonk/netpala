@@ -33,6 +33,7 @@ type KeyBindings struct {
 	SetDns            KeyBinding `toml:"set_dns"`
 	SetMac            KeyBinding `toml:"set_mac"`
 	ImportVpn         KeyBinding `toml:"import_vpn"`
+	Help              KeyBinding `toml:"help"`
 
 	// Application
 	Quit   KeyBinding `toml:"quit"`
@@ -222,6 +223,13 @@ func DefaultKeyBindings() KeyBindings {
 			Keys: []string{"i"},
 			Help: "Import",
 		},
+		Help: KeyBinding{
+			// "?" rather than "h", which is already Toggle Hidden. It is also
+			// what less, vim, htop and most TUIs use, so it is the key someone
+			// tries first.
+			Keys: []string{"?"},
+			Help: "Help",
+		},
 		Quit: KeyBinding{
 			Keys: []string{"q", "ctrl+c", "ctrl+q", "ctrl+w"},
 			Help: "Quit",
@@ -389,6 +397,9 @@ func mergeWithDefaults(cfg Config) Config {
 	if len(cfg.KeyBindings.ImportVpn.Keys) == 0 {
 		cfg.KeyBindings.ImportVpn = defaults.ImportVpn
 	}
+	if len(cfg.KeyBindings.Help.Keys) == 0 {
+		cfg.KeyBindings.Help = defaults.Help
+	}
 	if len(cfg.KeyBindings.Quit.Keys) == 0 {
 		cfg.KeyBindings.Quit = defaults.Quit
 	}
@@ -432,6 +443,9 @@ func mergeWithDefaults(cfg Config) Config {
 	}
 	if cfg.KeyBindings.ImportVpn.Help == "" {
 		cfg.KeyBindings.ImportVpn.Help = defaults.ImportVpn.Help
+	}
+	if cfg.KeyBindings.Help.Help == "" {
+		cfg.KeyBindings.Help.Help = defaults.Help.Help
 	}
 	if cfg.KeyBindings.Quit.Help == "" {
 		cfg.KeyBindings.Quit.Help = defaults.Quit.Help
@@ -560,6 +574,7 @@ type AppKeyMap struct {
 	SetDns            key.Binding
 	SetMac            key.Binding
 	ImportVpn         key.Binding
+	Help              key.Binding
 	Quit              key.Binding
 	Cancel            key.Binding
 }
@@ -579,6 +594,7 @@ func NewAppKeyMap(cfg *Config) AppKeyMap {
 		SetDns:            cfg.KeyBindings.SetDns.ToKeyBinding(),
 		SetMac:            cfg.KeyBindings.SetMac.ToKeyBinding(),
 		ImportVpn:         cfg.KeyBindings.ImportVpn.ToKeyBinding(),
+		Help:              cfg.KeyBindings.Help.ToKeyBinding(),
 		Quit:              cfg.KeyBindings.Quit.ToKeyBinding(),
 		Cancel:            cfg.KeyBindings.Cancel.ToKeyBinding(),
 	}
@@ -599,35 +615,50 @@ func (k AppKeyMap) ShortHelp() []key.Binding {
 // also keeps the bar on one line, which the layout depends on: it budgets
 // exactly one row for the status bar, so a wrapped bar pushes the tables off
 // the bottom of the screen.
+// The status bar gets one row, and the layout budgets on that: a bar that
+// wrapped would push the bottom of the device table off the screen. Known
+// Networks had twelve bindings to show and room for about nine, so the hints
+// at the end -- pane navigation among them -- were silently dropped.
+//
+// So the bar carries only what you need to find your way around and act on a
+// row, and everything else moves into the help popup. Which keys those are is
+// PaneActions; the popup is the only place they are written down, so the bar
+// always advertises the help key itself.
 func (k AppKeyMap) PaneHelp(pane int) []key.Binding {
+	if pane == common.PaneDevice {
+		// One row, so there is nothing to move between.
+		return []key.Binding{k.Select, k.NextPane, k.PrevPane, k.Help, k.Quit}
+	}
+	return []key.Binding{
+		k.Up, k.Down, k.Select, k.NextPane, k.PrevPane, k.Help, k.Quit,
+	}
+}
+
+// PaneActions lists what the given pane can do beyond moving and selecting.
+//
+// These are the bindings the status bar no longer has room for. Kept per-pane
+// rather than as one flat list because a key that does nothing here is worse
+// than one that is not mentioned: the point of a help popup is to answer "what
+// can I do to this row", not "what does this program have".
+func (k AppKeyMap) PaneActions(pane int) []key.Binding {
 	switch pane {
 	case common.PaneKnown:
 		return []key.Binding{
-			k.Up, k.Down, k.Select, k.Remove, k.Scan,
-			k.ToggleAutoConnect, k.ToggleHidden, k.SetDns, k.SetMac,
-			k.NextPane, k.PrevPane, k.Quit,
+			k.Remove, k.ToggleAutoConnect, k.ToggleHidden, k.SetDns, k.SetMac,
 		}
-	case common.PaneScanned:
-		return []key.Binding{k.Up, k.Down, k.Select, k.Scan, k.NextPane, k.PrevPane, k.Quit}
 	case common.PaneVPN:
-		// Import is deliberately absent. It is a global key rather than a pane
-		// action -- it has to be, since this pane is hidden until there is a
-		// profile to put in it, which is exactly the state someone importing
-		// their first tunnel is in. Listing it here as well costs a hint the
-		// bar does not have room for: the layout budgets one row for it, and
-		// a ninth entry pushes pane navigation off the end at 80 columns.
-		return []key.Binding{
-			k.Up, k.Down, k.Select, k.Remove, k.ToggleAutoConnect, k.SetDns,
-			k.NextPane, k.PrevPane, k.Quit,
-		}
-	case common.PaneSecurity:
-		// No remove: a unit is installed by the system, not by netpala, and
-		// nothing in this pane is netpala's to delete.
-		return []key.Binding{k.Up, k.Down, k.Select, k.NextPane, k.PrevPane, k.Quit}
-	case common.PaneDevice:
-		return []key.Binding{k.Select, k.Scan, k.NextPane, k.PrevPane, k.Quit}
+		return []key.Binding{k.Remove, k.ToggleAutoConnect, k.SetDns}
+	case common.PaneScanned, common.PaneSecurity, common.PaneDevice:
+		// Nothing beyond select. A scan result is connected to, a unit is
+		// toggled, a device is switched on or off.
+		return nil
 	}
-	return k.ShortHelp()
+	return nil
+}
+
+// GlobalActions work from any pane.
+func (k AppKeyMap) GlobalActions() []key.Binding {
+	return []key.Binding{k.Scan, k.ImportVpn}
 }
 
 // FullHelp returns the full set of key bindings

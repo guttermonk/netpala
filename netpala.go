@@ -58,6 +58,7 @@ type NetpalaData struct {
 	DnsForm      models.DnsSelect
 	MacForm      models.MacSelect
 	VpnForm      models.VpnImport
+	HelpForm     models.HelpPopup
 
 	SelectedNetwork common.ScannedNetwork
 	DnsTarget       common.DNSTarget
@@ -87,7 +88,7 @@ type NetpalaData struct {
 	// can be told apart from merely refreshing while already on it.
 	lastConnectedPath godbus.ObjectPath
 	connectionTracked bool
-	PopupState        int // -1: none, 0: eap, 1: confirm, 2: password, 3: dns, 4: mac, 5: vpn import
+	PopupState        int // -1: none, 0: eap, 1: confirm, 2: password, 3: dns, 4: mac, 5: vpn import, 6: help
 
 	Alert               bubbleup.AlertModel
 	InitialLoadComplete bool
@@ -950,6 +951,18 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.MacForm = newMacForm.(models.MacSelect)
 			return m, cmd
 		}
+	case 6:
+		// Handle the help popup. Read-only: anything that reads as "done"
+		// closes it, and nothing else does anything.
+		if _, done := msg.(common.ExitFormMsg); done {
+			m.PopupState = -1
+			return m, nil
+		}
+		var newHelp tea.Model
+		newHelp, cmd = m.HelpForm.Update(msg)
+		m.HelpForm = newHelp.(models.HelpPopup)
+		return m, cmd
+
 	case 5:
 		// Handle the WireGuard import popup
 		switch msg := msg.(type) {
@@ -1237,6 +1250,15 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, probeCmd
 		}
 
+		// The keys the status bar has no room for live in the help popup, so
+		// this one has to work from every pane.
+		if m.Config.KeyBindings.Help.Matches(keyStr) {
+			m.HelpForm = models.ModelHelpPopup(m.selectedBox, m.KeyMap, m.Colors)
+			m.PopupState = 6
+			m.Overlay = updateOverlayModel(m, &m.HelpForm)
+			return m, nil
+		}
+
 		// Import a WireGuard config. Works from any pane on purpose: the VPN
 		// pane hides itself while it is empty, which is exactly the situation
 		// someone importing their first tunnel is in.
@@ -1312,6 +1334,9 @@ func (m NetpalaData) View() string {
 		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
 	case 5:
 		m.Overlay = updateOverlayModel(m, &m.VpnForm)
+		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
+	case 6:
+		m.Overlay = updateOverlayModel(m, &m.HelpForm)
 		return m.Alert.Render(m.Overlay.View() + m.StatusBar.View())
 	default:
 		return m.Alert.Render(m.Tables.View() + m.StatusBar.View())

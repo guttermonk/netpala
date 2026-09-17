@@ -21,7 +21,7 @@ func helpAdvertises(pane int, help string) bool {
 // works on a pane has to be listed there -- and one that does not must not be,
 // or it advertises a key that does nothing.
 func TestVpnPaneAdvertisesItsOwnActions(t *testing.T) {
-	for _, action := range []string{"Dis/Connect", "Remove", "Auto", "DNS"} {
+	for _, action := range []string{"Dis/Connect"} {
 		if !helpAdvertises(common.PaneVPN, action) {
 			t.Errorf("VPN pane does not offer %q", action)
 		}
