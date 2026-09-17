@@ -192,6 +192,13 @@ type VpnConnection struct {
 	// the network underneath it.
 	DNSMode    string
 	DNSServers []string
+	// IsDefaultRoute reports that this tunnel is where the machine's traffic
+	// actually leaves.
+	//
+	// Connected is not the same thing. A split-tunnel profile can be up and
+	// carrying nothing but its own subnet, which looks identical in the pane
+	// and is the opposite of what the user thinks they switched on.
+	IsDefaultRoute bool
 }
 
 // DNSTarget is a saved connection the DNS picker can act on.

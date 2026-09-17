@@ -33,6 +33,9 @@ func GetVpnData(c *dbus.Conn) []common.VpnConnection {
 		}
 	}
 
+	// 1b. Which active connection the machine's traffic actually leaves by.
+	primary := primaryConnection(nm)
+
 	// 2. Get all saved connection profiles.
 	var savedConnPaths []dbus.ObjectPath
 	if err := settingsObj.Call("org.freedesktop.NetworkManager.Settings.ListConnections", 0).Store(&savedConnPaths); err != nil {
@@ -87,11 +90,36 @@ func GetVpnData(c *dbus.Conn) []common.VpnConnection {
 				Endpoint:    vpnEndpoint(connType, settings),
 				DNSMode:     DNSModeFromSettings(settings),
 				DNSServers:  DNSServersFromSettings(settings),
+				// "/" is NetworkManager's empty object path, which would
+				// otherwise match every profile that is not active.
+				IsDefaultRoute: isConnected && activePath != "" && activePath == primary,
 			})
 		}
 	}
 
 	return vpnList
+}
+
+// primaryConnection is the active connection the machine's traffic leaves by.
+//
+// NetworkManager defines this as the holder of the default route, and names the
+// VPN rather than the device underneath it when a VPN has taken that route.
+// That is the whole reason to ask: it is the one question "is this connection
+// active?" cannot answer, and the difference between a tunnel carrying
+// everything and a tunnel carrying its own subnet.
+//
+// An empty path is returned when there is nothing primary, which is normal
+// while the machine is offline.
+func primaryConnection(nm dbus.BusObject) dbus.ObjectPath {
+	v, err := nm.GetProperty(NMDest + ".PrimaryConnection")
+	if err != nil {
+		return ""
+	}
+	path, ok := v.Value().(dbus.ObjectPath)
+	if !ok || path == "/" {
+		return ""
+	}
+	return path
 }
 
 // autoconnectFrom reads connection.autoconnect.

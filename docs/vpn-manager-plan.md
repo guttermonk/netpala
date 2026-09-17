@@ -226,19 +226,41 @@ longer label on any existing one, will push pane navigation off the end.
 
 ---
 
-## Phase 4 — Say which connection traffic is actually using
+## Phase 4 — Say which connection traffic is actually using — **done**
 
 From the Wi-Fi note above: two `>` markers and no indication which one carries
-traffic. Options, cheapest first:
+traffic.
 
-- Mark the Known Networks row as carrying a tunnel rather than as the exit.
-- Show the VPN's DNS in the VPN row, so the Known Networks DNS column is
-  obviously not the whole story.
-- Reuse the `dnsIsOverridden` idea: compare effective DNS against what the
-  Wi-Fi profile asked for, and say so when they disagree.
+The answer turned out to be a single NetworkManager property rather than
+anything inferred. `PrimaryConnection` is *defined* as the holder of the default
+route, and is documented to name the VPN rather than the device underneath it
+when a VPN has taken that route — exactly the question being asked. It rides
+along on `VpnConnection.IsDefaultRoute`, so no new message or model field was
+needed, and `PropertiesChanged` on the NM object already refreshes VPN data, so
+it updates live.
 
-Worth designing before Phase 5 adds a second way for the same confusion to
-arise.
+It also answers a question this plan had not thought to ask: **a connected
+split-tunnel profile looks identical to a working full tunnel.** "Connected" is
+true for both, and the difference is the entire point of switching one on. The
+VPN pane title now flags it.
+
+Of the three options listed here:
+
+- *Mark the Known Networks row as carrying a tunnel* — done, as a pane title
+  suffix rather than a marker glyph. Titles have room and need no legend; the
+  5-column marker has neither.
+- *Show the VPN's DNS in the VPN row* — done in Phase 3.
+- *Reuse `dnsIsOverridden` to flag DNS disagreement* — **deliberately not
+  done.** It compares resolv.conf against what NM applied, and on any machine
+  running systemd-resolved those differ permanently and harmlessly: resolv.conf
+  holds the 127.0.0.53 stub while NM applied the real servers. As a persistent
+  marker it would fire constantly and mean nothing. It stays where it is
+  useful — the stop-the-resolver notice, where the comparison is made about a
+  specific pending action rather than shown as ambient state.
+
+`CalcTitle` measured the title with `len()` before this, so the box rule came
+out two columns short per non-ASCII character. That did not matter while every
+title was a fixed ASCII string; it does now that titles carry profile names.
 
 ---
 

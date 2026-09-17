@@ -284,6 +284,29 @@ so the Known Networks row keeps its `>` marker and both show as connected. A
 `wireguard` profile gets its own device. Either way, if the Wi-Fi goes, the
 tunnel goes with it.
 
+#### Which connection your traffic actually uses
+
+Two rows marked connected, and `>` alone cannot say which one traffic leaves
+by — so the pane titles say it instead:
+
+```
+┌ Known Networks - carrying mullvad-se ────────────────────────────────────────┐
+```
+
+```
+┌ Virtual Private Networks - connected, but not carrying your traffic ─────────┐
+```
+
+The first means the Wi-Fi is the carrier and the tunnel is the way out. The
+second is the case worth catching: **the tunnel is up and your traffic is still
+going around it.** A split-tunnel profile — one whose `AllowedIPs` is a subnet
+rather than `0.0.0.0/0` — looks exactly like a working full tunnel in the pane,
+and "connected" is true for both.
+
+This is NetworkManager's own answer, not a guess: `PrimaryConnection` is
+defined as the holder of the default route, and names the VPN rather than the
+device underneath it when a VPN has taken that route.
+
 The Endpoint column is the far end of the tunnel, which is not something the
 profile name can be trusted to tell you. WireGuard keeps it per peer, so a
 config with several peers shows the first and a count of the rest
@@ -778,6 +801,8 @@ Colors can be specified as:
   what NetworkManager cannot carry over
 - Per-tunnel DNS provider switcher, since a tunnel's own resolvers are what the
   machine uses while it is up
+- Says which connection traffic actually leaves by, so a split-tunnel VPN is
+  not mistaken for a working one
 - Add & connect to:
   - WPA-PSK
   - WPA-SAE

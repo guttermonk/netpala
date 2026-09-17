@@ -114,7 +114,10 @@ func CalcTitle(title string, selected bool, primaryColor, activeColor string) st
 		bold = true
 	}
 	width := WindowDimensions().Width
-	repeatCount := max(width-4-len(title), 0)
+	// Measured in columns, not bytes. Titles now carry profile names, and a
+	// single non-ASCII character in one would shorten the rule by two and
+	// leave the box border ragged.
+	repeatCount := max(width-4-lipgloss.Width(title), 0)
 	return lipgloss.NewStyle().
 		Bold(bold).
 		Foreground(lipgloss.Color(color)).
