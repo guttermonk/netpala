@@ -300,17 +300,34 @@ func thirds() (a, b, c int) {
 	return third, third, total - 2*third
 }
 
+// firstThirdSplit divides the leading third into the marker column and the
+// label column beside it.
+//
+// Every pane uses this, including the ones with nothing to mark. New Networks
+// holds no marker -- a scan result is not connected to anything -- but it
+// still reserves the column, because without it that pane's first label starts
+// five columns left of every other pane's and the whole view reads as
+// misaligned.
+//
+// The floor is the widest label any pane puts in this column, not each pane's
+// own, so that a terminal narrow enough to trigger it does not move one pane's
+// boundary without moving the others'.
+func firstThirdSplit() (marker, label int) {
+	third, _, _ := thirds()
+	return markerWidth, max(third-markerWidth, lipgloss.Width("Service"))
+}
+
 func FormatSecurityData(services []SecurityService) [][]string {
 	// Three equal columns, matching the New Networks pane so the two line up
 	// with each other. The marker lives inside the first third rather than
 	// beside it, which is what keeps the column boundaries on the same
 	// fractions in both panes.
-	service, unit, state := thirds()
-	service = max(service-markerWidth, lipgloss.Width("Service"))
+	marker, service := firstThirdSplit()
+	_, unit, state := thirds()
 
 	data := [][]string{
 		padHeaders([]string{"", "Service", "Unit", "State"},
-			[]int{markerWidth, service, unit, state}), {""},
+			[]int{marker, service, unit, state}), {""},
 	}
 	for _, s := range services {
 		marker := "     "
@@ -356,14 +373,13 @@ const KnownDetailColumnsFitFrom = 85
 // fits, and KnownDetailColumnsFitFrom records where that line is.
 func knownWidths() []int {
 	total := max(WindowDimensions().Width-2, knownDetailColumns+markerWidth+1)
-	third := total / 3
 
-	name := max(third-markerWidth, lipgloss.Width("Name"))
-	rest := total - markerWidth - name
+	marker, name := firstThirdSplit()
+	rest := total - marker - name
 	base, extra := rest/knownDetailColumns, rest%knownDetailColumns
 
 	widths := make([]int, 0, knownDetailColumns+2)
-	widths = append(widths, markerWidth, name)
+	widths = append(widths, marker, name)
 	for i := range knownDetailColumns {
 		w := base
 		if i < extra {
@@ -435,14 +451,20 @@ func FormatScannedNetworksData(networks []ScannedNetwork, selectedRow int, heigh
 	// Three equal columns, matching the Security pane. This list is for
 	// discovery rather than for acting on, so there is nothing here that
 	// deserves the slack the way Name does in the known-networks table.
-	name, security, signal := thirds()
+	//
+	// The leading column is always blank: nothing in a scan is connected, so
+	// there is never a marker to put in it. It is reserved anyway so Name
+	// starts where every other pane's first label does -- see firstThirdSplit.
+	marker, name := firstThirdSplit()
+	_, security, signal := thirds()
 
 	data := [][]string{
-		padHeaders([]string{"Name", "Security", "Signal"}, []int{name, security, signal}), {""},
+		padHeaders([]string{"", "Name", "Security", "Signal"},
+			[]int{marker, name, security, signal}), {""},
 	}
 	window := FormatArrays(networks, selectedRow, height)
 	for _, n := range window {
-		row := []string{n.SSID, n.Security, strconv.Itoa(n.Signal) + "%"}
+		row := []string{"", n.SSID, n.Security, strconv.Itoa(n.Signal) + "%"}
 		for i := range row {
 			if lipgloss.Width(row[i]) > lipgloss.Width(data[0][i]) {
 				row[i] = row[i][:max(0, lipgloss.Width(data[0][i])-3)] + "..."

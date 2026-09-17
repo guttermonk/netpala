@@ -163,6 +163,63 @@ func TestVpnColumnsLineUpWithKnownNetworks(t *testing.T) {
 	}
 }
 
+// Every pane's first label starts in the same column.
+//
+// Known Networks, VPN and Security each reserve a 5-wide marker for the ">"
+// that shows what is live. New Networks has nothing to mark -- a scan result
+// is not connected to anything -- and used to start its Name hard against the
+// left border, five columns adrift of every other pane.
+func TestEveryPaneStartsItsFirstLabelInTheSameColumn(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	for _, w := range []int{38, 60, 80, 100, 120, 140} {
+		SetWindowSizeForTest(w, 40)
+
+		panes := map[string][]string{
+			"known":    FormatKnownNetworksData(nil, 0, 0)[0],
+			"scanned":  FormatScannedNetworksData(nil, 0, 0)[0],
+			"security": FormatSecurityData(nil)[0],
+			"vpn":      FormatVpnData(nil)[0],
+		}
+
+		for name, header := range panes {
+			if got := lipgloss.Width(header[0]); got != markerWidth {
+				t.Errorf("width %d: %s reserves %d columns for the marker, want %d",
+					w, name, got, markerWidth)
+			}
+			// And the marker column is blank in the header everywhere, so it
+			// reads as a gutter rather than an unnamed column.
+			if strings.TrimSpace(header[0]) != "" {
+				t.Errorf("width %d: %s has a label in the marker column: %q",
+					w, name, header[0])
+			}
+		}
+	}
+}
+
+// The blank column has to be in the data rows too, or the values slide left
+// out from under their headers.
+func TestScannedRowsCarryTheMarkerColumn(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+	SetWindowSizeForTest(80, 40)
+
+	rows := FormatScannedNetworksData([]ScannedNetwork{
+		{SSID: "cafe-guest", Security: "wpa2-psk", Signal: 65},
+	}, 0, 1)
+
+	header := rows[0]
+	row := rows[2] // 0 is the header, 1 the spacer
+	if len(row) != len(header) {
+		t.Fatalf("row has %d cells against %d headers", len(row), len(header))
+	}
+	if strings.TrimSpace(row[0]) != "" {
+		t.Errorf("the marker cell is not blank: %q", row[0])
+	}
+	if strings.TrimSpace(row[1]) != "cafe-guest" {
+		t.Errorf("Name landed in cell %q, want it under the Name header", row[1])
+	}
+}
+
 // Name takes the first third in the VPN pane too, and the four detail columns
 // fill exactly the remaining two thirds.
 func TestVpnNameTakesTheFirstThird(t *testing.T) {
@@ -243,15 +300,16 @@ func TestScannedAndSecurityBreakOnTheSameThirds(t *testing.T) {
 		scanned := columnEdges(FormatScannedNetworksData(nil, 0, 0)[0])
 		security := columnEdges(FormatSecurityData(nil)[0])
 
-		// Security carries a leading marker column, so its content columns are
-		// the last three; the marker is absorbed into the first third.
-		if len(scanned) != 3 || len(security) != 4 {
+		// Both carry a leading marker column -- New Networks has nothing to
+		// mark, but reserves it so its first label starts where every other
+		// pane's does.
+		if len(scanned) != 4 || len(security) != 4 {
 			t.Fatalf("width %d: %d scanned columns, %d security", w, len(scanned), len(security))
 		}
 		for i := range scanned {
-			if scanned[i] != security[i+1] {
+			if scanned[i] != security[i] {
 				t.Errorf("width %d: column %d ends at %d in New Networks and %d in Security",
-					w, i, scanned[i], security[i+1])
+					w, i, scanned[i], security[i])
 			}
 		}
 	}

@@ -274,6 +274,27 @@ thirds. The `>` marker sits *inside* the first third rather than beside it, so
 the first column boundary lands on the same fraction in every pane and the
 whole view lines up when read top to bottom.
 
+**Every pane reserves the marker column, including the ones with nothing to
+mark.** A scan result is not connected to anything, so New Networks never shows
+a `>` — but it keeps the five columns anyway, because without them its Name
+would start hard against the left border, five columns adrift of every other
+pane:
+
+```
+┌ Known Networks ──────────────────────────────────────────────────────────────┐
+│             Name         Security    DNS      MAC    Hidden    Auto   Signal │
+│  >      home-wifi     wpa2-psk DNSCrypt  Stable    false    true    92%   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ New Networks ────────────────────────────────────────────────────────────────┐
+│             Name                  Security                   Signal          │
+│         cafe-guest             wpa2-psk                    65%            │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ Security ────────────────────────────────────────────────────────────────────┐
+│            Service                  Unit                     State           │
+│  >        DNSCrypt        dnscrypt-proxy2.service           running          │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
 ```
 ┌ Known Networks ──────────────────────────────────────────────────────────────┐
 │                    Name                  Security        DNS          MAC    …
