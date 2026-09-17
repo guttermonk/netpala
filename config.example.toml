@@ -201,3 +201,12 @@ error_text = "#aa0000"     # Dark red
 
 # Helper text at the bottom of the window
 help_text = "#a7abca"      # Light blue-gray
+
+# Example text inside an empty input box, such as the file path shown when
+# importing a WireGuard config.
+#
+# Its own setting because it has to be dim enough to read as "not what you
+# typed" and bright enough to actually read, and where that lands depends on
+# your terminal background. Raise it towards primary if it is hard to see
+# against yours; lower it towards inactive if it looks like real input.
+placeholder = "#8a90b8"    # Muted blue-gray

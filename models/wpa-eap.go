@@ -32,25 +32,13 @@ type EAPMethod struct {
 }
 
 func ModelWpaEapForm(colors config.Colors) WpaEapForm {
-	Identity := textinput.New()
-	Identity.Placeholder = "Identity"
-	Identity.Prompt = ""
-	Identity.Width = 32
-	Identity.CharLimit = 256
+	Identity := newTextInput(colors, "Identity", 32, 256)
 
-	Password := textinput.New()
-	Password.Placeholder = "Password"
-	Password.Prompt = ""
-	Password.Width = 32
-	Password.CharLimit = 256
+	Password := newTextInput(colors, "Password", 32, 256)
 	Password.EchoMode = textinput.EchoPassword
 	Password.EchoCharacter = '*'
 
-	CaCert := textinput.New()
-	CaCert.Placeholder = "e.g. /etc/ssl/certs/ca.pem"
-	CaCert.Prompt = ""
-	CaCert.Width = 32
-	CaCert.CharLimit = 512
+	CaCert := newTextInput(colors, "e.g. /etc/ssl/certs/ca.pem", 32, 512)
 
 	m := WpaEapForm{
 		Identity:       Identity,

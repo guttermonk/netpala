@@ -894,12 +894,38 @@ error = "#ff0000"          # Red
 
 # Error text
 error_text = "#aa0000"     # Dark red
+
+# Helper text at the bottom of the window
+help_text = "#a7abca"      # Light blue-gray
+
+# Example text inside an empty input box
+placeholder = "#8a90b8"    # Muted blue-gray
 ```
 
 Colors can be specified as:
 - Hex color codes: `"#a7abca"`
 - Terminal color names: `"red"`, `"blue"`, `"green"`, etc.
 - ANSI color numbers: `"1"` (red), `"2"` (green), etc.
+
+#### If the placeholder text is hard to read
+
+`placeholder` is the greyed-out example inside an empty input — the
+`~/mullvad-se.conf` shown when importing a WireGuard config, the sample address
+in the DNS picker, and so on.
+
+It has its own setting because it has to be dim enough to read as *not what you
+typed* and bright enough to actually read, and where that lands depends on your
+terminal background. **Raise it towards `primary` if it disappears against
+yours**; lower it towards `inactive` if it looks like real input:
+
+```toml
+[colors]
+placeholder = "#a7abca"    # same as primary — maximum contrast
+```
+
+The underlying library defaults these to ANSI 240, a dark grey that vanishes on
+a dark or mid-grey background. netpala overrides that for every input it has, so
+the setting above is the only thing that controls them.
 
 ---
 

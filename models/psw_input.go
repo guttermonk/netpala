@@ -17,11 +17,7 @@ type PasswordInput struct {
 }
 
 func ModelPasswordInput(colors config.Colors) PasswordInput {
-	Input := textinput.New()
-	Input.Placeholder = "Enter Password..."
-	Input.Prompt = ""
-	Input.Width = 31
-	Input.CharLimit = 64
+	Input := newTextInput(colors, "Enter Password...", 31, 64)
 
 	return PasswordInput{
 		Password:     Input,

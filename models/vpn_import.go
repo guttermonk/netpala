@@ -43,11 +43,7 @@ type VpnImport struct {
 }
 
 func ModelVpnImport(colors config.Colors, keys config.KeyBindings) VpnImport {
-	input := textinput.New()
-	input.Placeholder = "~/mullvad-se.conf"
-	input.Prompt = ""
-	input.Width = 52
-	input.CharLimit = 512
+	input := newTextInput(colors, "~/mullvad-se.conf", 52, 512)
 	input.Focus()
 
 	return VpnImport{

@@ -31,11 +31,7 @@ type MacSelect struct {
 // wifi.cloned-mac-address resolves to, used to describe the "Default" row; ""
 // leaves it described in general terms.
 func ModelMacSelect(colors config.Colors, keys config.KeyBindings, nmDefault string) MacSelect {
-	input := textinput.New()
-	input.Placeholder = "02:11:22:33:44:55"
-	input.Prompt = ""
-	input.Width = 34
-	input.CharLimit = 17
+	input := newTextInput(colors, "02:11:22:33:44:55", 34, 17)
 
 	return MacSelect{
 		Options:  common.MACOptionsFor(nmDefault),

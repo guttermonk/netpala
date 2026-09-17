@@ -46,11 +46,7 @@ type DnsSelect struct {
 }
 
 func ModelDnsSelect(colors config.Colors, keys config.KeyBindings, dnscryptAddrs []string) DnsSelect {
-	input := textinput.New()
-	input.Placeholder = "9.9.9.9, 149.112.112.112"
-	input.Prompt = ""
-	input.Width = 34
-	input.CharLimit = 256
+	input := newTextInput(colors, "9.9.9.9, 149.112.112.112", 34, 256)
 
 	return DnsSelect{
 		Providers: common.DNSProvidersFor(dnscryptAddrs),

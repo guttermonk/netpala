@@ -50,6 +50,13 @@ type Colors struct {
 	Error       string `toml:"error"`        // Error states
 	ErrorText   string `toml:"error_text"`   // Error text
 	HelpText    string `toml:"help_text"`    // Help text at bottom of window
+	// Placeholder is the greyed-out example text inside an empty input box.
+	//
+	// Worth its own setting rather than reusing Inactive: it has to be dim
+	// enough to read as "not what you typed" and bright enough to actually
+	// read, and where that lands depends on the terminal background. The
+	// bubbles default is ANSI 240, which disappears entirely on a grey one.
+	Placeholder string `toml:"placeholder"`
 }
 
 // DNS holds settings for the DNS provider switcher
@@ -237,6 +244,9 @@ func DefaultColors() Colors {
 		Error:       "#ff0000", // Red
 		ErrorText:   "#aa0000", // Dark red
 		HelpText:    "#a7abca", // Help text at bottom (same as Primary by default)
+		// Between Inactive and Primary: legible on a dark or mid-grey
+		// background, still clearly not typed input.
+		Placeholder: "#8a90b8",
 	}
 }
 
@@ -454,6 +464,9 @@ func mergeWithDefaults(cfg Config) Config {
 	}
 	if cfg.Colors.HelpText == "" {
 		cfg.Colors.HelpText = defaultColors.HelpText
+	}
+	if cfg.Colors.Placeholder == "" {
+		cfg.Colors.Placeholder = defaultColors.Placeholder
 	}
 
 	if len(cfg.DNS.DnscryptAddresses) == 0 {
