@@ -53,11 +53,19 @@ func (m TablesModel) exitVPN() (common.VpnConnection, bool) {
 	return common.VpnConnection{}, false
 }
 
-// connectedVPNs counts the tunnels that are up, whatever they carry.
-func (m TablesModel) connectedVPNs() int {
+// connectedKnowableVPNs counts the tunnels that are up and whose routing
+// netpala can actually inspect.
+//
+// A vendor daemon is excluded on purpose. Its tunnel may well be carrying
+// everything -- Mullvad's normally is -- but netpala cannot tell, because
+// these providers route with a firewall mark and a policy rule rather than
+// through NetworkManager. Counting one here would put "not carrying your
+// traffic" on screen over a tunnel that is carrying all of it, which is a
+// worse failure than saying nothing.
+func (m TablesModel) connectedKnowableVPNs() int {
 	n := 0
 	for _, v := range m.VpnData {
-		if v.Connected {
+		if v.Connected && v.KnowsWhatItCarries() {
 			n++
 		}
 	}
@@ -81,7 +89,7 @@ func (m TablesModel) vpnTitle() string {
 	if _, ok := m.exitVPN(); ok {
 		return base
 	}
-	if m.connectedVPNs() == 0 {
+	if m.connectedKnowableVPNs() == 0 {
 		return base
 	}
 	return base + " - connected, but not carrying your traffic"

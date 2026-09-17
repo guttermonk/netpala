@@ -31,6 +31,16 @@ const (
 )
 
 type VpnUpdateMsg []VpnConnection
+
+// VpnProvidersUpdateMsg carries the vendor-daemon rows. Separate from
+// VpnUpdateMsg because the two come from different places and refresh on
+// different triggers: profiles follow NetworkManager's signals, providers are
+// read from systemd and the kernel on a timer.
+type VpnProvidersUpdateMsg []VpnConnection
+
+// RefreshVpnProvidersMsg asks for that re-read. Sent rather than the data
+// itself by anything that does not hold the configuration.
+type RefreshVpnProvidersMsg struct{}
 type SecurityUpdateMsg []SecurityService
 type DeviceUpdateMsg []Device
 type KnownNetworksUpdateMsg []KnownNetwork
@@ -173,12 +183,53 @@ type SecurityService struct {
 	SubState string
 }
 
+// What a VPN row is backed by. The pane lists both, because "route my traffic
+// through a provider I have an account with" is one idea to a user however the
+// software happens to arrive on the machine.
+const (
+	// VpnKindProfile is a NetworkManager connection profile. Everything about
+	// it is readable and writable over D-Bus.
+	VpnKindProfile = iota
+	// VpnKindDaemon is a vendor daemon -- Mullvad, Tailscale -- driven by its
+	// own CLI. netpala can see whether its tunnel device is up and can run the
+	// commands named in config, and that is all: there is no profile to read
+	// an endpoint, a DNS setting or an autoconnect flag out of.
+	VpnKindDaemon
+)
+
+// VpnProviderConfig names a vendor VPN daemon netpala may show and drive.
+//
+// Deliberately all-config rather than netpala recognising particular vendors:
+// the commands, the unit and the interface name differ per provider and per
+// packaging, and inventing a built-in list would mean guessing wrong on
+// someone's machine with no way for them to correct it.
+type VpnProviderConfig struct {
+	Name string `toml:"name"`
+	// Unit is the daemon's systemd unit. A provider whose unit is not
+	// installed is skipped, so listing one costs nothing.
+	Unit string `toml:"unit"`
+	// Interface is the tunnel device the provider creates. This is how netpala
+	// tells "connected" from "the daemon is running", which are not the same
+	// thing and differ by the entire point of the feature.
+	Interface string `toml:"interface"`
+	// Connect and Disconnect are argv, not shell strings. See RunCommand.
+	Connect    []string `toml:"connect"`
+	Disconnect []string `toml:"disconnect"`
+}
+
 type VpnConnection struct {
 	Path       dbus.ObjectPath
 	ActivePath dbus.ObjectPath
 	Name       string
 	ConnType   string
 	Connected  bool
+	// Kind selects which half of this struct is meaningful.
+	Kind int
+	// Unit, Iface, Connect and Disconnect are set for VpnKindDaemon only.
+	Unit       string
+	Iface      string
+	Connect    []string
+	Disconnect []string
 	// AutoConnect mirrors connection.autoconnect, which NetworkManager treats
 	// as true when the profile does not say otherwise.
 	AutoConnect bool
@@ -198,8 +249,23 @@ type VpnConnection struct {
 	// Connected is not the same thing. A split-tunnel profile can be up and
 	// carrying nothing but its own subnet, which looks identical in the pane
 	// and is the opposite of what the user thinks they switched on.
+	//
+	// Only ever set for VpnKindProfile. NetworkManager answers this for the
+	// connections it manages; a vendor daemon's tunnel is not one of them, and
+	// the providers that matter here route with fwmark and a policy rule that
+	// the main routing table does not show. Netpala cannot tell, so for a
+	// daemon row this stays false and nothing is claimed either way -- see
+	// KnowsWhatItCarries.
 	IsDefaultRoute bool
 }
+
+// KnowsWhatItCarries reports whether netpala can tell what this tunnel is
+// carrying. False for vendor daemons, whose routing it cannot inspect.
+//
+// The distinction matters because "not the default route" and "unknown" look
+// identical in the struct and mean opposite things to a user deciding whether
+// their traffic is protected.
+func (v VpnConnection) KnowsWhatItCarries() bool { return v.Kind == VpnKindProfile }
 
 // DNSTarget is a saved connection the DNS picker can act on.
 //

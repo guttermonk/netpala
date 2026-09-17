@@ -91,6 +91,36 @@ func TestKnownTitleNamesTheCarryingTunnelNotTheFirst(t *testing.T) {
 	}
 }
 
+// A vendor daemon routes with a firewall mark and a policy rule rather than
+// through NetworkManager, so netpala cannot see what it carries. Claiming it
+// carries nothing would put a warning on screen over a tunnel that is in fact
+// carrying everything -- worse than saying nothing at all.
+func TestConnectedDaemonDoesNotTriggerTheWarning(t *testing.T) {
+	provider := common.VpnConnection{
+		Kind: common.VpnKindDaemon, Name: "Mullvad", Connected: true,
+	}
+
+	m := tablesWith(provider)
+	if got := m.vpnTitle(); got != "Virtual Private Networks" {
+		t.Errorf("vpnTitle() = %q, want no claim about a daemon's routing", got)
+	}
+	if got := m.knownTitle(); got != "Known Networks" {
+		t.Errorf("knownTitle() = %q, want no claim about a daemon's routing", got)
+	}
+}
+
+// A profile in the same pane still gets the warning it deserves.
+func TestADaemonDoesNotMaskAProfileWarning(t *testing.T) {
+	provider := common.VpnConnection{
+		Kind: common.VpnKindDaemon, Name: "Mullvad", Connected: true,
+	}
+
+	m := tablesWith(provider, tunnel("work", true, false))
+	if got := m.vpnTitle(); !strings.Contains(got, "not carrying") {
+		t.Errorf("vpnTitle() = %q, want the profile's warning still shown", got)
+	}
+}
+
 // A profile name is arbitrary text and goes straight into the title, so it
 // cannot be allowed to push the title past the terminal width.
 func TestLongProfileNamesAreTruncatedInTitles(t *testing.T) {

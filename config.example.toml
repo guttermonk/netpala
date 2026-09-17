@@ -123,6 +123,52 @@ provides_dns = true
 name = "I2P"
 unit = "i2pd.service"
 
+# VPN Provider Configuration
+#
+# Vendor VPN daemons shown in the VPN pane beside NetworkManager profiles.
+# A provider whose unit is not installed is skipped, so listing one costs
+# nothing.
+#
+# These exist because vendor daemons have no D-Bus API: starting
+# mullvad-daemon connects nothing, `mullvad connect` does. This is the ONLY
+# place netpala runs an external command — everything else goes over D-Bus.
+#
+#   connect/disconnect are argv arrays, never shell strings. Nothing is
+#   word-split or interpolated, so a value containing ";" or "$(...)" is an
+#   argument rather than a second command. Commands are given 30 seconds; one
+#   that waits for input (`tailscale up` on an unauthenticated node prints a
+#   URL and blocks) is killed rather than hanging the UI.
+#
+#   interface is how netpala tells "connected" from "the daemon is running",
+#   which are not the same thing. The row is marked connected when that
+#   interface exists and is up. That is exact for a provider which creates its
+#   device on connect and removes it on disconnect — Mullvad works this way.
+#   A provider that keeps its interface around whenever the daemon runs will
+#   read as connected whenever the daemon runs, which is why only Mullvad
+#   ships as a default.
+#
+# netpala cannot see how these route, since they use a firewall mark and a
+# policy rule rather than NetworkManager, so it makes no claim about whether
+# such a tunnel is carrying your traffic.
+
+[[vpn.providers]]
+name       = "Mullvad"
+unit       = "mullvad-daemon.service"
+interface  = "wg0-mullvad"
+connect    = ["mullvad", "connect"]
+disconnect = ["mullvad", "disconnect"]
+
+# Tailscale, as an example of one to add yourself. Not a default: tailscale0
+# exists whenever tailscaled runs, so the row would read connected even after
+# `tailscale down`.
+#
+# [[vpn.providers]]
+# name       = "Tailscale"
+# unit       = "tailscaled.service"
+# interface  = "tailscale0"
+# connect    = ["tailscale", "up"]
+# disconnect = ["tailscale", "down"]
+
 # Color Configuration
 # 
 # Customize the application colors using hex color codes (e.g., "#ffffff")

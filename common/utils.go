@@ -216,8 +216,17 @@ func FormatVpnData(vpns []VpnConnection) [][]string {
 			state = "  >  "
 		}
 
-		row := []string{state, vpn.Name, vpn.ConnType, vpn.Endpoint,
-			VpnDNSLabel(vpn.DNSMode), strconv.FormatBool(vpn.AutoConnect)}
+		// A vendor daemon keeps its endpoint, resolvers and reconnect setting
+		// inside its own configuration, where netpala cannot read them. "-"
+		// says so. Leaving these blank would read as "none", and "None" in
+		// the DNS column would be an outright lie -- a provider almost always
+		// pins its own.
+		endpoint, dns, auto := vpn.Endpoint, VpnDNSLabel(vpn.DNSMode), strconv.FormatBool(vpn.AutoConnect)
+		if vpn.Kind == VpnKindDaemon {
+			endpoint, dns, auto = "-", "-", "-"
+		}
+
+		row := []string{state, vpn.Name, vpn.ConnType, endpoint, dns, auto}
 		for i := range row {
 			if lipgloss.Width(row[i]) > lipgloss.Width(data[0][i]) {
 				row[i] = row[i][:max(0, lipgloss.Width(data[0][i])-3)] + "..."

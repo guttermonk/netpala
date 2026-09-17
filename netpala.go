@@ -28,8 +28,17 @@ type NetpalaData struct {
 	selectedBox   int
 	SelectedEntry int
 
-	DeviceData      []common.Device
+	DeviceData []common.Device
+	// VpnData is what the pane shows: NetworkManager profiles followed by
+	// vendor daemons. Kept as one slice so navigation, selection and the
+	// layout all work on a single list.
+	//
+	// The two halves are held separately because they refresh independently --
+	// profiles on NetworkManager's signals, providers on the timer -- and an
+	// update to one must not discard the other.
 	VpnData         []common.VpnConnection
+	VpnProfiles     []common.VpnConnection
+	VpnProviders    []common.VpnConnection
 	SecurityData    []common.SecurityService
 	KnownNetworks   []common.KnownNetwork
 	ScannedNetworks []common.ScannedNetwork
@@ -93,11 +102,12 @@ type NetpalaData struct {
 }
 
 // The initial command to load all data at startup.
-func loadInitialData(Conn *godbus.Conn, securityServices []common.SecurityServiceConfig) tea.Cmd {
+func loadInitialData(Conn *godbus.Conn, securityServices []common.SecurityServiceConfig, vpnProviders []common.VpnProviderConfig) tea.Cmd {
 	return func() tea.Msg {
 		// Step 1: Fetch all data first to ensure we have both lists.
 		devices := network.GetDevicesData(Conn)
 		vpns := network.GetVpnData(Conn)
+		providers := network.GetVpnProviders(Conn, vpnProviders)
 		security := network.GetSecurityServices(Conn, securityServices)
 		known := network.GetKnownNetworks(Conn)
 		scanned := network.GetScannedNetworks(Conn)
@@ -122,6 +132,7 @@ func loadInitialData(Conn *godbus.Conn, securityServices []common.SecurityServic
 			func() tea.Msg { return common.KnownNetworksUpdateMsg(known) },
 			func() tea.Msg { return common.ScannedNetworksUpdateMsg(filteredScanned) },
 			func() tea.Msg { return common.VpnUpdateMsg(vpns) },
+			func() tea.Msg { return common.VpnProvidersUpdateMsg(providers) },
 			func() tea.Msg { return common.SecurityUpdateMsg(security) },
 			func() tea.Msg {
 				return common.DnsStateMsg{
@@ -228,6 +239,47 @@ func (m *NetpalaData) openStartConfirmation(svc common.SecurityService) {
 	m.Confirmation = models.ModelConfirmation(m.Colors)
 	m.Confirmation.Message = svc.Confirm
 	m.Overlay = updateOverlayModel(*m, &m.Confirmation)
+}
+
+// refreshVpnProvidersCmd re-reads the vendor daemons. Needs the configuration,
+// which is why it lives here rather than in the dbus package with the rest.
+func (m NetpalaData) refreshVpnProvidersCmd() tea.Cmd {
+	providers := m.Config.VPN.Providers
+	conn := m.Conn
+	return func() tea.Msg {
+		return common.VpnProvidersUpdateMsg(network.GetVpnProviders(conn, providers))
+	}
+}
+
+// rebuildVpnData joins the two sources into the list the pane shows.
+//
+// Profiles first, so the rows netpala can actually manage are the ones under
+// the cursor by default, and so the order does not shuffle when a daemon
+// appears or goes away.
+func (m *NetpalaData) rebuildVpnData() {
+	combined := make([]common.VpnConnection, 0, len(m.VpnProfiles)+len(m.VpnProviders))
+	combined = append(combined, m.VpnProfiles...)
+	combined = append(combined, m.VpnProviders...)
+	m.VpnData = combined
+	m.clampSelection()
+}
+
+// selectedVpn is the row under the cursor, if the VPN pane holds one.
+func (m NetpalaData) selectedVpn() (common.VpnConnection, bool) {
+	if m.selectedBox != common.PaneVPN || m.SelectedEntry >= len(m.VpnData) {
+		return common.VpnConnection{}, false
+	}
+	return m.VpnData[m.SelectedEntry], true
+}
+
+// notForDaemonsCmd explains why a key did nothing on a vendor-daemon row.
+//
+// Silence would be worse: the key works on the row above, so nothing happening
+// reads as a bug rather than as "there is no profile here to change".
+func (m NetpalaData) notForDaemonsCmd(action string, v common.VpnConnection) tea.Cmd {
+	return m.Alert.NewAlertCmd(bubbleup.InfoKey, fmt.Sprintf(
+		"%s is run by %s, not by NetworkManager - there is no profile to %s",
+		v.Name, v.Unit, action))
 }
 
 // vpnNameTaken reports whether a VPN profile of this name already exists.
@@ -596,7 +648,7 @@ func NetpalaModel() NetpalaData {
 func (m NetpalaData) Init() tea.Cmd {
 	return tea.Batch(
 		m.Alert.Init(),
-		loadInitialData(m.Conn, m.Config.Security.Services),
+		loadInitialData(m.Conn, m.Config.Security.Services, m.Config.VPN.Providers),
 		dbus.RefreshTicker(),
 		dbus.WaitForDBusSignal(m.Conn, m.DBusSignals),
 	)
@@ -959,6 +1011,10 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return common.SecurityUpdateMsg(
 					network.GetSecurityServices(m.Conn, m.Config.Security.Services))
 			},
+			// Vendor daemons are read from systemd and the kernel rather than
+			// from NetworkManager, so no D-Bus signal announces their changes.
+			// The tick is the only thing that notices.
+			m.refreshVpnProvidersCmd(),
 			func() tea.Msg {
 				return common.DnsStateMsg{
 					Effective: common.SystemResolvers(),
@@ -1051,8 +1107,10 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 			} else if m.selectedBox == common.PaneVPN && len(m.VpnData) > 0 {
-				// Toggle VPN
 				selectedVpn := m.VpnData[m.SelectedEntry]
+				if selectedVpn.Kind == common.VpnKindDaemon {
+					return m, dbus.ToggleVpnProviderCmd(m.Conn, selectedVpn, !selectedVpn.Connected)
+				}
 				return m, dbus.ToggleVpnCmd(m.Conn, selectedVpn.Path, selectedVpn.ActivePath, !selectedVpn.Connected)
 			} else if m.selectedBox == common.PaneSecurity && len(m.SecurityData) > 0 {
 				// Toggle a systemd unit (Tor, DNSCrypt, ...)
@@ -1109,7 +1167,13 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Overlay = updateOverlayModel(m, &m.Confirmation)
 				return m, nil
 			} else if m.selectedBox == common.PaneVPN && len(m.VpnData) > 0 {
-				m.openDeleteVpnConfirmation(m.VpnData[m.SelectedEntry])
+				// A vendor daemon is not netpala's to delete: removing it
+				// means uninstalling a package.
+				target := m.VpnData[m.SelectedEntry]
+				if target.Kind == common.VpnKindDaemon {
+					return m, m.notForDaemonsCmd("delete", target)
+				}
+				m.openDeleteVpnConfirmation(target)
 				return m, nil
 			}
 		}
@@ -1121,6 +1185,12 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, dbus.ToggleAutoConnectCmd(m.Conn, selectedNetwork.Path, selectedNetwork.AutoConnect)
 			} else if m.selectedBox == common.PaneVPN && len(m.VpnData) > 0 {
 				selectedVpn := m.VpnData[m.SelectedEntry]
+				if selectedVpn.Kind == common.VpnKindDaemon {
+					// Whether a vendor daemon reconnects on boot is its own
+					// setting, kept in its own config; there is no
+					// NetworkManager profile with an autoconnect flag.
+					return m, m.notForDaemonsCmd("set auto-connect on", selectedVpn)
+				}
 				return m, dbus.ToggleVpnAutoConnectCmd(m.Conn, selectedVpn.Path, selectedVpn.AutoConnect)
 			}
 		}
@@ -1142,7 +1212,13 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0:
 				target = common.DNSTargetFromNetwork(m.KnownNetworks[m.SelectedEntry])
 			case m.selectedBox == common.PaneVPN && len(m.VpnData) > 0:
-				target = common.DNSTargetFromVpn(m.VpnData[m.SelectedEntry])
+				selected := m.VpnData[m.SelectedEntry]
+				if selected.Kind == common.VpnKindDaemon {
+					// The provider sets its own resolvers from inside its
+					// daemon. There is no profile here to rewrite.
+					return m, m.notForDaemonsCmd("change DNS on", selected)
+				}
+				target = common.DNSTargetFromVpn(selected)
 			default:
 				return m, nil
 			}
@@ -1274,9 +1350,17 @@ func (m NetpalaData) handleDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
 		return m, dbus.WaitForDBusSignal(m.Conn, m.DBusSignals), true
 
 	case common.VpnUpdateMsg:
-		m.VpnData = msg
-		m.clampSelection()
+		m.VpnProfiles = msg
+		m.rebuildVpnData()
 		return m, nil, true
+
+	case common.VpnProvidersUpdateMsg:
+		m.VpnProviders = msg
+		m.rebuildVpnData()
+		return m, nil, true
+
+	case common.RefreshVpnProvidersMsg:
+		return m, m.refreshVpnProvidersCmd(), true
 
 	case common.SecurityUpdateMsg:
 		m.SecurityData = msg

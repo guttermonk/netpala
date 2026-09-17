@@ -414,6 +414,74 @@ A config that is incomplete or malformed is refused with a reason naming the
 line, rather than being half-imported into a profile that fails later from
 inside NetworkManager with a message about something else.
 
+#### Vendor VPN daemons (Mullvad, Tailscale…)
+
+Some providers do not ship a NetworkManager profile at all — they ship a daemon
+and a CLI. They still belong in this pane, because "route my traffic through a
+provider I have an account with" is one idea to a user however the software
+happens to arrive.
+
+```
+┌ Virtual Private Networks ────────────────────────────────────────────────────┐
+│       Name            Type         Endpoint            DNS       Auto        │
+│                                                                              │
+│  >  mullvad-se     WireGuard  185.65.135.170:51820   Custom      true        │
+│  >  Mullvad        Daemon              -               -          -          │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+The `-` cells are not empty, they are **unknown**. A daemon keeps its endpoint,
+resolvers and reconnect setting inside its own configuration, where netpala
+cannot read them — and `None` in the DNS column would be a lie, since a
+provider almost always pins its own.
+
+Select connects or disconnects. Delete, auto-connect and DNS say why they don't
+apply rather than doing nothing: there is no NetworkManager profile behind the
+row to change, and "deleting" Mullvad would mean uninstalling a package.
+
+**This is the one place netpala runs an external command.** Everything else in
+the program goes over D-Bus, which has a typed interface, a defined error and a
+polkit policy behind it. Vendor daemons have no D-Bus API — starting
+`mullvad-daemon` connects nothing, `mullvad connect` does — so the commands are
+named in your config:
+
+```toml
+[[vpn.providers]]
+name       = "Mullvad"
+unit       = "mullvad-daemon.service"
+interface  = "wg0-mullvad"
+connect    = ["mullvad", "connect"]
+disconnect = ["mullvad", "disconnect"]
+```
+
+Two things keep that exception contained. The commands are **argv arrays, never
+shell strings** — nothing is word-split or interpolated, so a value containing
+`;` or `$(...)` is an argument rather than a second command, because there is no
+shell for it to reach. And they have a **30-second deadline**: `tailscale up` on
+an unauthenticated node prints a URL and waits, and bubbletea has one update
+goroutine with no way to cancel a command in flight, so without a deadline that
+hangs the whole UI.
+
+`interface` is how netpala tells *connected* from *the daemon is running*, which
+are not the same thing and differ by the entire point of the feature. The row is
+marked connected when that interface exists and is up. That is exact for a
+provider which creates its device on connect and removes it on disconnect —
+Mullvad does, which is why it is the only default. Tailscale keeps `tailscale0`
+around whenever `tailscaled` runs, so it would read connected even after
+`tailscale down`; add it yourself knowing that.
+
+Connecting starts the unit first if it is not running, and waits for it to
+become active before running the connect command — otherwise the CLI fails
+against a socket that is not up yet and blames itself. Disconnecting only asks
+the daemon to disconnect; stopping the unit is the Security pane's job.
+
+One thing netpala deliberately will not tell you: **whether a daemon's tunnel is
+carrying your traffic.** These providers route with a firewall mark and a policy
+rule rather than through NetworkManager, so the answer that works for profiles
+is not available. Rather than guess, the pane titles stay silent for daemon
+rows — a warning saying "not carrying your traffic" over a tunnel carrying all
+of it would be worse than none.
+
 #### OpenVPN
 
 There is no `.ovpn` importer. NetworkManager's lives in the
@@ -836,6 +904,8 @@ Colors can be specified as:
   machine uses while it is up
 - Says which connection traffic actually leaves by, so a split-tunnel VPN is
   not mistaken for a working one
+- Vendor VPN daemons (Mullvad and friends) listed and driven from the same pane
+  as NetworkManager profiles
 - Add & connect to:
   - WPA-PSK
   - WPA-SAE

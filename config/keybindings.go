@@ -65,12 +65,41 @@ type Security struct {
 	Services []common.SecurityServiceConfig `toml:"services"`
 }
 
+// VPN lists vendor VPN daemons shown in the VPN pane beside NetworkManager
+// profiles. Providers whose unit is not installed are skipped at runtime.
+type VPN struct {
+	Providers []common.VpnProviderConfig `toml:"providers"`
+}
+
 // Config holds the entire application configuration
 type Config struct {
 	KeyBindings KeyBindings `toml:"keybindings"`
 	Colors      Colors      `toml:"colors"`
 	DNS         DNS         `toml:"dns"`
 	Security    Security    `toml:"security"`
+	VPN         VPN         `toml:"vpn"`
+}
+
+// DefaultVPN returns the vendor VPN daemons netpala knows about out of the box.
+//
+// Only Mullvad. The "connected" marker for a daemon row comes from whether its
+// tunnel interface is up, which is exact for a provider that creates the
+// device on connect and removes it on disconnect -- Mullvad does. A provider
+// that keeps its interface around whenever the daemon runs would show as
+// connected while logically disconnected, and shipping a default that lies is
+// worse than shipping none.
+func DefaultVPN() VPN {
+	return VPN{
+		Providers: []common.VpnProviderConfig{
+			{
+				Name:       "Mullvad",
+				Unit:       "mullvad-daemon.service",
+				Interface:  "wg0-mullvad",
+				Connect:    []string{"mullvad", "connect"},
+				Disconnect: []string{"mullvad", "disconnect"},
+			},
+		},
+	}
 }
 
 // DefaultSecurity returns the default Security pane configuration
@@ -218,6 +247,7 @@ func DefaultConfig() Config {
 		Colors:      DefaultColors(),
 		DNS:         DefaultDNS(),
 		Security:    DefaultSecurity(),
+		VPN:         DefaultVPN(),
 	}
 }
 
@@ -431,6 +461,9 @@ func mergeWithDefaults(cfg Config) Config {
 	}
 	if len(cfg.Security.Services) == 0 {
 		cfg.Security = DefaultSecurity()
+	}
+	if len(cfg.VPN.Providers) == 0 {
+		cfg.VPN = DefaultVPN()
 	}
 
 	return cfg

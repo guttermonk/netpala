@@ -264,10 +264,41 @@ title was a fixed ASCII string; it does now that titles carry profile names.
 
 ---
 
-## Phase 5 — Provider daemons (Mullvad, Tailscale, Proton)
+## Phase 5 — Provider daemons (Mullvad, Tailscale, Proton) — **done**
 
 This is what the revised pane rule buys, and it is the phase with a genuine cost
-attached. **Gated on accepting a shell-out.**
+attached. **The shell-out was accepted** and this is built on it. Contained as
+promised: argv arrays rather than shell strings, so there is no shell to inject
+into, and a 30-second deadline, because bubbletea has one update goroutine and
+no way to cancel a command in flight.
+
+Three things this plan had not worked out:
+
+- **"Read it from the tunnel device via NM's GetDevices" does not work.**
+  NetworkManager enumerates devices it does not manage, but reports them all as
+  state `unmanaged` whether the link is up or down — so for a tunnel a vendor
+  daemon created, which is the entire case here, NM's state answers nothing.
+  The interface flags in `/sys/class/net/<iface>/flags` do, and need no D-Bus
+  at all.
+- **Interface presence is exact for some providers and not others.** Mullvad
+  creates its device on connect and removes it on disconnect; Tailscale keeps
+  `tailscale0` while `tailscaled` runs. So only Mullvad ships as a default —
+  shipping a default that lies is worse than shipping none — and the caveat is
+  documented for anyone adding their own.
+- **Phase 4 needed correcting.** `IsDefaultRoute` is answered by NM's
+  `PrimaryConnection`, which knows nothing about a daemon's tunnel; these
+  providers route with a firewall mark and a policy rule that the main routing
+  table does not show either. Left uncorrected, a connected Mullvad would have
+  put "connected, but not carrying your traffic" on screen over a tunnel
+  carrying all of it. `KnowsWhatItCarries` now separates "not the default
+  route" from "cannot tell", and the titles stay silent for daemon rows.
+
+The plan's third consequence — that `Remove` stops being uniform — turned out
+not to need a selection-aware `PaneHelp` after all. The profile-only keys
+(delete, auto-connect, DNS) explain why they do not apply rather than doing
+nothing, which is better than hiding them: most rows in the pane are profiles,
+and a hint that appears and disappears as the cursor moves is its own kind of
+confusing.
 
 The VPN pane grows a second kind of row. `common.VpnConnection` gets a `Kind`,
 and the actions dispatch on it:
@@ -348,8 +379,18 @@ keyed on pane alone and would have to become selection-aware.
 
 ## Open questions
 
-1. Is the Phase 5 shell-out acceptable, or should provider daemons wait for
-   something better?
-2. Is there a WireGuard config available to test Phase 2 against?
-3. Does Phase 4 want to be earlier? It is a correctness-of-display issue that
-   already exists in a mild form today.
+1. ~~Is the Phase 5 shell-out acceptable?~~ Accepted; Phase 5 is built on it.
+2. ~~Does Phase 4 want to be earlier?~~ It landed in order and was worth it —
+   it also caught the split-tunnel case, which this plan had not thought to ask
+   about.
+3. **Still open: none of this has been run against a live tunnel.** No VPN
+   profile, and no `wg`, `mullvad` or `tailscale` binary, has been available on
+   the development machine at any point. Everything here is covered by unit
+   tests and written against NetworkManager's documented settings, but the
+   first real import, the first real connect, and the first real daemon row are
+   all still ahead. The specific things to check first:
+   - that `GetSettings` returns `wireguard.peers` as `[]map[string]dbus.Variant`
+     (the `aa{sv}` assumption in `wireguardEndpoint` and `WireGuardSettings`);
+   - that a profile `Update` preserves the WireGuard private key it does not
+     send, the way it already does for WPA pre-shared keys;
+   - that `wg0-mullvad` is the interface name on this packaging of Mullvad.
