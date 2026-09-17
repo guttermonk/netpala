@@ -267,10 +267,12 @@ windowrule = float 1, match:title com.omarchy.netpala
 ### Pane layout
 
 Name takes the first third of the Known Networks pane and the six detail
-columns divide the remaining two thirds evenly. New Networks and Security are
-three equal thirds. The `>` marker sits *inside* the first third rather than
-beside it, so the first column boundary lands on the same fraction in every
-pane and the whole view lines up when read top to bottom.
+columns divide the remaining two thirds evenly. The VPN pane sits on the same
+grid with four columns instead of six — Type over Security, Endpoint over MAC,
+DNS over Auto, Auto over Signal. New Networks and Security are three equal
+thirds. The `>` marker sits *inside* the first third rather than beside it, so
+the first column boundary lands on the same fraction in every pane and the
+whole view lines up when read top to bottom.
 
 ```
 ┌ Known Networks ──────────────────────────────────────────────────────────────┐
@@ -298,13 +300,22 @@ Lists the saved NetworkManager profiles whose type is `vpn` or `wireguard`, and
 hides itself when there are none.
 
 ```
-┌ Virtual Private Networks ────────────────────────────────────────────────────┐
-│       Name            Type         Endpoint            DNS       Auto        │
+┌ Known Networks ──────────────────────────────────────────────────────────────┐
+│             Name         Security    DNS      MAC    Hidden    Auto   Signal │
 │                                                                              │
-│  >  mullvad-se     WireGuard  185.65.135.170:51820   Custom      true        │
-│     work           OPENCONNECT vpn.example.com       None        false       │
+│  >      home-wifi     wpa2-psk DNSCrypt  Stable    false    true    92%   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ Virtual Private Networks ────────────────────────────────────────────────────┐
+│             Name                Type            Endpoint       DNS     Auto  │
+│                                                                              │
+│  >       mullvad-se          WireGuard     185.65.135.170:... Custom   true  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The VPN pane sits on the same grid as the list above it: Name takes the first
+third, and the four detail columns land on the boundaries of the six there —
+Type begins where Security does, Endpoint where MAC does, DNS where Auto does
+and Auto where Signal does.
 
 **Connecting a VPN does not drop your Wi-Fi** — the tunnel rides on top of it,
 so the Known Networks row keeps its `>` marker and both show as connected. A
@@ -423,10 +434,10 @@ happens to arrive.
 
 ```
 ┌ Virtual Private Networks ────────────────────────────────────────────────────┐
-│       Name            Type         Endpoint            DNS       Auto        │
+│             Name                Type            Endpoint       DNS     Auto  │
 │                                                                              │
-│  >  mullvad-se     WireGuard  185.65.135.170:51820   Custom      true        │
-│  >  Mullvad        Daemon              -               -          -          │
+│  >       mullvad-se          WireGuard     185.65.135.170:... Custom   true  │
+│  >         Mullvad             Daemon              -            -       -    │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -201,14 +201,34 @@ func FormatStationData(devices []Device) [][]string {
 	return data
 }
 
+// vpnWidths lays the VPN pane out on the known-networks grid.
+//
+// Name takes the first third, as it does there, and the four detail columns
+// land on the boundaries of the six above them:
+//
+//	Known:  │ Name │ Security │ DNS │ MAC  │ Hidden │ Auto │ Signal │
+//	VPN:    │ Name │    Type      │  Endpoint   │  DNS   │  Auto  │
+//
+// So Type begins where Security does, Endpoint where MAC does, DNS where Auto
+// does and Auto where Signal does. Derived by summing the known widths rather
+// than recomputing fractions, so the two cannot drift apart: the remainder
+// that cannot be split six ways is distributed unevenly, and any arithmetic
+// that ignored that would misalign by a column at most widths.
+func vpnWidths() []int {
+	k := knownWidths() // marker, Name, Security, DNS, MAC, Hidden, Auto, Signal
+	return []int{
+		k[0],        // marker
+		k[1],        // Name
+		k[2] + k[3], // Type       spans Security + DNS
+		k[4] + k[5], // Endpoint   spans MAC + Hidden
+		k[6],        // DNS        over Auto
+		k[7],        // Auto       over Signal
+	}
+}
+
 func FormatVpnData(vpns []VpnConnection) [][]string {
 	data := [][]string{
-		// Type is fixed at the longest plugin name netpala can produce,
-		// OPENCONNECT at 11, plus a space; DNS at "Cloudflare" plus one, the
-		// same as the known-networks table. Name and Endpoint split what is
-		// left, since both hold arbitrary-length text and neither deserves the
-		// slack more than the other.
-		padHeaders([]string{"", "Name", "Type", "Endpoint", "DNS", "Auto"}, []int{5, -1, 12, -1, 11, 8}), {""},
+		padHeaders([]string{"", "Name", "Type", "Endpoint", "DNS", "Auto"}, vpnWidths()), {""},
 	}
 	for _, vpn := range vpns {
 		state := "     "

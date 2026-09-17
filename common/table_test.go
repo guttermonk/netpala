@@ -100,6 +100,94 @@ func TestFixedColumnsFitTheirLongestLabel(t *testing.T) {
 	}
 }
 
+// columnStarts is where each column begins, measured from the left of the pane.
+func columnStarts(header []string) []int {
+	starts := make([]int, 0, len(header))
+	at := 0
+	for _, cell := range header {
+		starts = append(starts, at)
+		at += lipgloss.Width(cell)
+	}
+	return starts
+}
+
+// The VPN pane sits directly under Known Networks, so its columns land on that
+// grid: four columns over the six above them, each beginning where its
+// counterpart does.
+//
+//	Known:  │ Name │ Security │ DNS │ MAC  │ Hidden │ Auto │ Signal │
+//	VPN:    │ Name │    Type      │  Endpoint   │  DNS   │  Auto  │
+func TestVpnColumnsLineUpWithKnownNetworks(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	// Indices into the known-networks header.
+	const (
+		kName     = 1
+		kSecurity = 2
+		kMAC      = 4
+		kAuto     = 6
+		kSignal   = 7
+	)
+	// Indices into the VPN header.
+	const (
+		vName     = 1
+		vType     = 2
+		vEndpoint = 3
+		vDNS      = 4
+		vAuto     = 5
+	)
+
+	for _, w := range []int{66, 80, 85, 100, 108, 120, 140, 200} {
+		SetWindowSizeForTest(w, 40)
+
+		known := columnStarts(FormatKnownNetworksData(nil, 0, 0)[0])
+		vpn := columnStarts(FormatVpnData(nil)[0])
+
+		for _, pair := range []struct {
+			label      string
+			vpnCol     int
+			knownCol   int
+			knownLabel string
+		}{
+			{"Name", vName, kName, "Name"},
+			{"Type", vType, kSecurity, "Security"},
+			{"Endpoint", vEndpoint, kMAC, "MAC"},
+			{"DNS", vDNS, kAuto, "Auto"},
+			{"Auto", vAuto, kSignal, "Signal"},
+		} {
+			if vpn[pair.vpnCol] != known[pair.knownCol] {
+				t.Errorf("width %d: VPN %s starts at %d, Known %s at %d",
+					w, pair.label, vpn[pair.vpnCol], pair.knownLabel, known[pair.knownCol])
+			}
+		}
+	}
+}
+
+// Name takes the first third in the VPN pane too, and the four detail columns
+// fill exactly the remaining two thirds.
+func TestVpnNameTakesTheFirstThird(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	for _, w := range []int{66, 80, 100, 120, 140} {
+		SetWindowSizeForTest(w, 40)
+		header := FormatVpnData(nil)[0]
+
+		total := w - 2
+		if got := lipgloss.Width(header[0]) + lipgloss.Width(header[1]); got != total/3 {
+			t.Errorf("width %d: marker plus Name is %d, want the first third (%d)",
+				w, got, total/3)
+		}
+
+		sum := 0
+		for _, cell := range header {
+			sum += lipgloss.Width(cell)
+		}
+		if sum != total {
+			t.Errorf("width %d: columns total %d, want %d", w, sum, total)
+		}
+	}
+}
+
 // padHeaders centres each header in exactly its column and puts nothing
 // between columns, so a label as wide as its column runs straight into the
 // next one -- which is how "Auto-Connect" ended up touching "Signal". Checked
