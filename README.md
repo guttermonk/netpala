@@ -264,6 +264,28 @@ windowrule = float 1, match:title com.omarchy.netpala
 
 ---
 
+### Pane layout
+
+Name takes the first third of the Known Networks pane and the six detail
+columns divide the remaining two thirds evenly. New Networks and Security are
+three equal thirds. The `>` marker sits *inside* the first third rather than
+beside it, so the first column boundary lands on the same fraction in every
+pane and the whole view lines up when read top to bottom.
+
+```
+┌ Known Networks ──────────────────────────────────────────────────────────────┐
+│                    Name                  Security        DNS          MAC    …
+│                                                                              │
+│  >             home-wifi              wpa2-psk     DNSCrypt      Stable   …
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+An even split means every detail column is as narrow as six columns of that
+space allows, so **below 85 columns the DNS cell truncates** — `Cloudflare`
+shows as `Cloudf...`. That is the cost of the even split rather than a bug; at
+85 columns and up everything fits. Cells truncate and never wrap, because the
+layout budgets exactly one row per network.
+
 ### VPN Pane
 
 Lists the saved NetworkManager profiles whose type is `vpn` or `wireguard`, and

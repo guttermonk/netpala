@@ -301,21 +301,61 @@ func FormatSecurityData(services []SecurityService) [][]string {
 	return data
 }
 
+// knownDetailColumns is everything to the right of Name: Security, DNS, MAC,
+// Hidden, Auto, Signal.
+const knownDetailColumns = 6
+
+// KnownDetailColumnsFitFrom is the narrowest terminal at which every detail
+// column in the known-networks table is wide enough for the longest label it
+// can hold. Narrower than this and "Cloudflare" is shown as "Cloudf...".
+//
+// Exported so the tests can assert the threshold rather than assume it: it is
+// a consequence of the equal split, and moving either the split or a label
+// moves it.
+const KnownDetailColumnsFitFrom = 85
+
+// knownWidths gives Name the first third and divides the rest equally.
+//
+// The marker sits inside Name's third rather than beside it, the same as in the
+// Security pane, so the first column boundary lands on the same fraction in
+// every pane.
+//
+// Equal detail columns mean they are all as narrow as the narrowest needs to
+// be: at 80 columns they come out at 9, which is not enough for "Cloudflare".
+// That is the trade for the even split -- below 85 columns the DNS cell
+// truncates rather than the layout bending to fit it. Above 85 everything
+// fits, and KnownDetailColumnsFitFrom records where that line is.
+func knownWidths() []int {
+	total := max(WindowDimensions().Width-2, knownDetailColumns+markerWidth+1)
+	third := total / 3
+
+	name := max(third-markerWidth, lipgloss.Width("Name"))
+	rest := total - markerWidth - name
+	base, extra := rest/knownDetailColumns, rest%knownDetailColumns
+
+	widths := make([]int, 0, knownDetailColumns+2)
+	widths = append(widths, markerWidth, name)
+	for i := range knownDetailColumns {
+		w := base
+		if i < extra {
+			w++ // spread the remainder rather than leaving a ragged edge
+		}
+		widths = append(widths, w)
+	}
+	return widths
+}
+
 func FormatKnownNetworksData(networks []KnownNetwork, selectedRow int, height int) [][]string {
 	base := [][]string{
-		// Name is the only flexible column, so it absorbs all the slack: at 140
-		// columns it was 73 wide for SSIDs of at most 32. The fixed widths are
-		// sized to their longest real value plus a space ("Cloudflare" is 10,
-		// "Permanent" 9), which leaves Name roomier on a narrow terminal
-		// without truncating anything on a wide one.
+		// Name takes the first third; the six detail columns divide the rest
+		// equally. See knownWidths.
 		//
-		// The last three are headers rather than values: "false" is 5, so the
-		// width is set by the word above it. Each is one wider than its label,
-		// because padHeaders renders a header centred in exactly its column and
-		// puts no gap between columns -- a label that fills its width runs
-		// straight into the next one. "Auto" rather than "Auto-Connect" for
-		// that reason, and because it is what the status bar calls the key.
-		padHeaders([]string{"", "Name", "Security", "DNS", "MAC", "Hidden", "Auto", "Signal"}, []int{5, -1, 10, 11, 10, 8, 8, 8}), {""},
+		// "Auto" rather than "Auto-Connect": padHeaders renders a header
+		// centred in exactly its column and puts no gap between columns, so a
+		// label that fills its width runs straight into the next one. It is
+		// also what the status bar calls the key.
+		padHeaders([]string{"", "Name", "Security", "DNS", "MAC", "Hidden", "Auto", "Signal"},
+			knownWidths()), {""},
 	}
 	window := FormatArrays(networks, selectedRow, height)
 	for _, n := range window {

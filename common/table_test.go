@@ -45,10 +45,16 @@ func TestMACColumnShownAtEveryWidth(t *testing.T) {
 // Every column must be wide enough for its own header and for the longest
 // value it can hold, or the table quietly shows "Cloud..." instead of the
 // provider name.
+//
+// Only guaranteed from KnownDetailColumnsFitFrom upwards. The detail columns
+// are an equal division of two thirds of the pane, so on a narrow terminal
+// they are all as narrow as six columns of that space allows, and the longest
+// DNS label does not fit. TestNarrowTerminalTruncatesRatherThanReflows pins
+// what happens below the line.
 func TestNoColumnTruncatesItsContent(t *testing.T) {
 	defer SetWindowSizeForTest(0, 0)
 
-	for _, w := range []int{80, 100, 120, 140} {
+	for _, w := range []int{KnownDetailColumnsFitFrom, 100, 120, 140} {
 		SetWindowSizeForTest(w, 40)
 		rows := FormatKnownNetworksData(sampleNetworks(), 0, 3)
 
@@ -75,7 +81,7 @@ func TestNoColumnTruncatesItsContent(t *testing.T) {
 // a longer name fails here rather than silently truncating in the UI.
 func TestFixedColumnsFitTheirLongestLabel(t *testing.T) {
 	defer SetWindowSizeForTest(0, 0)
-	SetWindowSizeForTest(80, 40)
+	SetWindowSizeForTest(KnownDetailColumnsFitFrom, 40)
 
 	header := FormatKnownNetworksData(nil, 0, 0)[0]
 	widthOf := func(col int) int { return len(header[col]) }
@@ -262,20 +268,75 @@ func TestVpnFixedColumnsDoNotTruncate(t *testing.T) {
 	}
 }
 
-// Name is the only flexible column, so it takes whatever is left. It must not
-// be squeezed to nothing on a narrow terminal.
-func TestNameColumnKeepsUsableWidth(t *testing.T) {
+// Name takes the first third of the pane, less the marker column that sits
+// inside it. It no longer absorbs the slack: the detail columns divide the
+// remaining two thirds evenly however wide the terminal gets.
+func TestNameTakesTheFirstThird(t *testing.T) {
 	defer SetWindowSizeForTest(0, 0)
 
-	for _, tc := range []struct{ width, min int }{
-		{80, 14},
-		{100, 30},
-		{140, 60},
-	} {
-		SetWindowSizeForTest(tc.width, 40)
+	for _, w := range []int{60, 80, 100, 120, 140} {
+		SetWindowSizeForTest(w, 40)
 		header := FormatKnownNetworksData(sampleNetworks(), 0, 3)[0]
-		if got := len(header[1]); got < tc.min {
-			t.Errorf("width %d: Name column is %d, want at least %d", tc.width, got, tc.min)
+
+		total := w - 2
+		wantName := total/3 - markerWidth
+		if got := lipgloss.Width(header[1]); got != wantName {
+			t.Errorf("width %d: Name column is %d, want %d (a third less the marker)",
+				w, got, wantName)
 		}
+		// The marker plus Name is the first third exactly, which is what keeps
+		// the boundary in step with the panes below.
+		if got := lipgloss.Width(header[0]) + lipgloss.Width(header[1]); got != total/3 {
+			t.Errorf("width %d: first boundary at %d, want %d", w, got, total/3)
+		}
+	}
+}
+
+// The six detail columns divide the remaining two thirds evenly, to within the
+// one column of remainder that cannot be split six ways.
+func TestDetailColumnsAreEqual(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	for _, w := range []int{60, 80, 85, 100, 120, 140} {
+		SetWindowSizeForTest(w, 40)
+		header := FormatKnownNetworksData(nil, 0, 0)[0]
+
+		minW, maxW, sum := 1<<30, 0, 0
+		for _, cell := range header[2:] {
+			c := lipgloss.Width(cell)
+			minW, maxW, sum = min(minW, c), max(maxW, c), sum+c
+		}
+		if maxW-minW > 1 {
+			t.Errorf("width %d: detail columns range %d-%d, want them equal", w, minW, maxW)
+		}
+
+		total := w - 2
+		if want := total - total/3; sum != want {
+			t.Errorf("width %d: detail columns total %d, want the remaining two thirds (%d)",
+				w, sum, want)
+		}
+	}
+}
+
+// Below the threshold the cells truncate. That is the accepted cost of an even
+// split, but it must stay a truncation -- a cell that wrapped would take a
+// second line, and the layout budgets exactly one row per network.
+func TestNarrowTerminalTruncatesRatherThanReflows(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+	SetWindowSizeForTest(80, 40)
+
+	rows := FormatKnownNetworksData(sampleNetworks(), 0, 3)
+	for _, row := range rows {
+		for _, cell := range row {
+			if strings.Contains(cell, "\n") {
+				t.Errorf("cell wrapped onto a second line: %q", cell)
+			}
+		}
+	}
+
+	// And the truncation is the DNS column, as documented.
+	if got := lipgloss.Width(rows[0][3]); got >= 10 {
+		t.Errorf("DNS column is %d at 80 columns; the documented threshold of %d is wrong",
+			got, KnownDetailColumnsFitFrom)
 	}
 }
