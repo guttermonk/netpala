@@ -24,8 +24,8 @@ import (
 // NetpalaData.selectedBox, so panes that are hidden never hold the selection.
 const (
 	PaneKnown = iota
-	PaneScanned
 	PaneVPN
+	PaneScanned
 	PaneSecurity
 	PaneDevice
 )

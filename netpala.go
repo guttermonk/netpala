@@ -149,10 +149,14 @@ func loadInitialData(Conn *godbus.Conn, securityServices []common.SecurityServic
 // Security disappear when empty, so navigation has to be driven by this rather
 // than by a fixed count.
 func (m NetpalaData) visiblePanes() []int {
-	panes := []int{common.PaneKnown, common.PaneScanned}
+	// VPN sits directly under Known Networks, so the two profile lists -- the
+	// things you connect to -- are together, and its columns read against the
+	// grid above them. New Networks is discovery and comes after.
+	panes := []int{common.PaneKnown}
 	if len(m.VpnData) > 0 {
 		panes = append(panes, common.PaneVPN)
 	}
+	panes = append(panes, common.PaneScanned)
 	if len(m.SecurityData) > 0 {
 		panes = append(panes, common.PaneSecurity)
 	}

@@ -111,13 +111,38 @@ func columnStarts(header []string) []int {
 	return starts
 }
 
-// The VPN pane sits directly under Known Networks, so its columns land on that
-// grid: four columns over the six above them, each beginning where its
-// counterpart does.
+// labelCentres is where each header's *text* sits, which is what the eye
+// follows down the screen. A header is centred in its column, so this is not
+// the same as where the column begins -- a column spanning two of the grid's
+// slots puts its label on the seam between them.
+func labelCentres(header []string) []int {
+	out := make([]int, 0, len(header))
+	at := 0
+	for _, cell := range header {
+		width := lipgloss.Width(cell)
+		label := strings.TrimSpace(cell)
+		if label == "" {
+			out = append(out, -1) // spacer column, no label to place
+		} else {
+			lead := lipgloss.Width(cell) - lipgloss.Width(strings.TrimLeft(cell, " "))
+			out = append(out, at+lead+lipgloss.Width(label)/2)
+		}
+		at += width
+	}
+	return out
+}
+
+// The VPN pane sits directly under Known Networks, so its headings read down
+// the screen against the ones above them:
 //
 //	Known:  │ Name │ Security │ DNS │ MAC  │ Hidden │ Auto │ Signal │
-//	VPN:    │ Name │    Type      │  Endpoint   │  DNS   │  Auto  │
-func TestVpnColumnsLineUpWithKnownNetworks(t *testing.T) {
+//	VPN:    │ Name │   Type   │    Endpoint         │  DNS │  Auto  │
+//
+// Asserted on where the label text sits, not where the column begins. Those
+// are different things -- a header is centred in its column -- and matching
+// the boundaries while the labels sat a slot apart is exactly the bug this
+// guards against.
+func TestVpnHeadingsLineUpWithKnownNetworks(t *testing.T) {
 	defer SetWindowSizeForTest(0, 0)
 
 	// Indices into the known-networks header.
@@ -137,11 +162,11 @@ func TestVpnColumnsLineUpWithKnownNetworks(t *testing.T) {
 		vAuto     = 5
 	)
 
-	for _, w := range []int{66, 80, 85, 100, 108, 120, 140, 200} {
+	for _, w := range []int{66, 80, 85, 100, 108, 120, 140, 176, 200} {
 		SetWindowSizeForTest(w, 40)
 
-		known := columnStarts(FormatKnownNetworksData(nil, 0, 0)[0])
-		vpn := columnStarts(FormatVpnData(nil)[0])
+		known := labelCentres(FormatKnownNetworksData(nil, 0, 0)[0])
+		vpn := labelCentres(FormatVpnData(nil)[0])
 
 		for _, pair := range []struct {
 			label      string
@@ -155,9 +180,13 @@ func TestVpnColumnsLineUpWithKnownNetworks(t *testing.T) {
 			{"DNS", vDNS, kAuto, "Auto"},
 			{"Auto", vAuto, kSignal, "Signal"},
 		} {
-			if vpn[pair.vpnCol] != known[pair.knownCol] {
-				t.Errorf("width %d: VPN %s starts at %d, Known %s at %d",
-					w, pair.label, vpn[pair.vpnCol], pair.knownLabel, known[pair.knownCol])
+			// One column of slack: centring labels of different lengths in
+			// equal columns cannot always land on the same cell, and a
+			// single-column offset is not visible as a misalignment.
+			if diff := vpn[pair.vpnCol] - known[pair.knownCol]; diff < -1 || diff > 1 {
+				t.Errorf("width %d: VPN %s sits at column %d, Known %s at %d (%+d off)",
+					w, pair.label, vpn[pair.vpnCol], pair.knownLabel,
+					known[pair.knownCol], diff)
 			}
 		}
 	}
@@ -217,6 +246,34 @@ func TestScannedRowsCarryTheMarkerColumn(t *testing.T) {
 	}
 	if strings.TrimSpace(row[1]) != "cafe-guest" {
 		t.Errorf("Name landed in cell %q, want it under the Name header", row[1])
+	}
+}
+
+// Below the threshold a long plugin name truncates rather than wrapping or
+// pushing the alignment out. Pinned so the documented threshold cannot drift
+// away from what the code does.
+func TestVpnTypeTruncatesBelowItsThreshold(t *testing.T) {
+	defer SetWindowSizeForTest(0, 0)
+
+	SetWindowSizeForTest(VpnTypeColumnFitsFrom-1, 40)
+	if got := vpnWidths()[2]; got >= lipgloss.Width("OPENCONNECT") {
+		t.Errorf("Type column is %d just below the threshold; %d is wrong",
+			got, VpnTypeColumnFitsFrom)
+	}
+
+	SetWindowSizeForTest(VpnTypeColumnFitsFrom, 40)
+	if got := vpnWidths()[2]; got < lipgloss.Width("OPENCONNECT") {
+		t.Errorf("Type column is %d at the threshold, too narrow for OPENCONNECT", got)
+	}
+
+	// And it truncates rather than wrapping, which would cost a whole row.
+	SetWindowSizeForTest(80, 40)
+	for _, row := range FormatVpnData(sampleVpns())[2:] {
+		for _, cell := range row {
+			if strings.Contains(cell, "\n") {
+				t.Errorf("cell wrapped onto a second line: %q", cell)
+			}
+		}
 	}
 }
 
@@ -393,12 +450,16 @@ func TestVpnTableShowsEndpointAndAutoConnect(t *testing.T) {
 
 // Name and Endpoint hold arbitrary text and may truncate. The fixed columns
 // must not: a Type shown as "OPENCO..." tells the user nothing.
+//
+// Only guaranteed from VpnTypeColumnFitsFrom upwards. Type is one grid slot
+// wide because that is what puts its heading under Security's, and one slot is
+// not enough for OPENCONNECT on a narrow terminal.
 func TestVpnFixedColumnsDoNotTruncate(t *testing.T) {
 	defer SetWindowSizeForTest(0, 0)
 
 	const nameCol, endpointCol = 1, 3
 
-	for _, w := range []int{80, 100, 120, 140} {
+	for _, w := range []int{VpnTypeColumnFitsFrom, 100, 120, 140} {
 		SetWindowSizeForTest(w, 40)
 
 		for _, row := range FormatVpnData(sampleVpns())[2:] {

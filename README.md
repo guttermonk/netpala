@@ -326,6 +326,11 @@ again closes it.
 
 ### Pane layout
 
+The panes read **Known Networks, VPN, New Networks, Security, Device**. The two
+lists of saved profiles — the things you connect to — sit together at the top,
+and VPN's columns are laid out against the grid immediately above them. New
+Networks is for discovery and follows.
+
 Name takes the first third of the Known Networks pane and the six detail
 columns divide the remaining two thirds evenly. The VPN pane sits on the same
 grid with four columns instead of six — Type over Security, Endpoint over MAC,
@@ -344,6 +349,10 @@ pane:
 ┌ Known Networks ──────────────────────────────────────────────────────────────┐
 │             Name         Security    DNS      MAC    Hidden    Auto   Signal │
 │  >        home-wifi      wpa2-psk DNSCrypt  Stable    false    true    92%   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ Virtual Private Networks ────────────────────────────────────────────────────┐
+│             Name           Type            Endpoint            DNS     Auto  │
+│  >       mullvad-se      WireGuard   185.65.135.170:51820     Custom   true  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ New Networks ────────────────────────────────────────────────────────────────┐
 │             Name                  Security                   Signal          │
@@ -387,16 +396,26 @@ hides itself when there are none.
 │  >        home-wifi      wpa2-psk DNSCrypt  Stable    false    true    92%   │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ Virtual Private Networks ────────────────────────────────────────────────────┐
-│             Name                Type            Endpoint       DNS     Auto  │
+│             Name           Type            Endpoint            DNS     Auto  │
 │                                                                              │
-│  >       mullvad-se          WireGuard     185.65.135.170:... Custom   true  │
+│  >       mullvad-se      WireGuard   185.65.135.170:51820     Custom   true  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The VPN pane sits on the same grid as the list above it: Name takes the first
-third, and the four detail columns land on the boundaries of the six there —
-Type begins where Security does, Endpoint where MAC does, DNS where Auto does
-and Auto where Signal does.
+The VPN pane sits directly under Known Networks and on the same grid, so the
+headings read down the screen: **Type under Security, Endpoint under MAC, DNS
+under Auto, Auto under Signal.**
+
+What is placed is the heading text, not the column edge — a header is centred in
+its column, so a column spanning two of the grid's slots puts its label on the
+seam between them rather than over either. Endpoint therefore spans *three*
+slots (DNS, MAC, Hidden) so that its label lands on the middle one, which is
+also why it has the most room: endpoints are long.
+
+The cost is the Type column, which is one slot wide. **Below 93 columns a long
+plugin name truncates** — `OPENCONNECT` shows as `OPENCO...`. Giving Type two
+slots would fit it, at the price of its heading sitting between Security and
+DNS instead of over Security.
 
 **Connecting a VPN does not drop your Wi-Fi** — the tunnel rides on top of it,
 so the Known Networks row keeps its `>` marker and both show as connected. A
@@ -554,10 +573,10 @@ happens to arrive.
 
 ```
 ┌ Virtual Private Networks ────────────────────────────────────────────────────┐
-│             Name                Type            Endpoint       DNS     Auto  │
+│             Name           Type            Endpoint            DNS     Auto  │
 │                                                                              │
-│  >       mullvad-se          WireGuard     185.65.135.170:... Custom   true  │
-│  >         Mullvad             Daemon              -            -       -    │
+│  >       mullvad-se      WireGuard   185.65.135.170:51820     Custom   true  │
+│  >         Mullvad        Daemon               -                -       -    │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 

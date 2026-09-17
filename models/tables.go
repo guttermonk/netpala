@@ -126,10 +126,13 @@ func (m TablesModel) View() string {
 		securityView = ""
 	}
 
+	// VPN directly under Known Networks: both are lists of saved profiles you
+	// connect to, and the VPN columns are laid out against the grid above
+	// them. New Networks is for discovery and follows.
 	return strings.Join([]string{
 		knownNetsTable.View(),
-		scannedNetsTable.View(),
 		vpnView,
+		scannedNetsTable.View(),
 		securityView,
 		deviceTable.View(),
 	}, "")

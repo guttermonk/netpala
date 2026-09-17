@@ -28,7 +28,7 @@ func TestVisiblePanesHidesEmptyOnes(t *testing.T) {
 		},
 		{
 			name: "vpn only", vpns: 2,
-			want: []int{common.PaneKnown, common.PaneScanned, common.PaneVPN, common.PaneDevice},
+			want: []int{common.PaneKnown, common.PaneVPN, common.PaneScanned, common.PaneDevice},
 		},
 		{
 			name: "security only", security: 2,
@@ -36,7 +36,7 @@ func TestVisiblePanesHidesEmptyOnes(t *testing.T) {
 		},
 		{
 			name: "both", vpns: 1, security: 1,
-			want: []int{common.PaneKnown, common.PaneScanned, common.PaneVPN, common.PaneSecurity, common.PaneDevice},
+			want: []int{common.PaneKnown, common.PaneVPN, common.PaneScanned, common.PaneSecurity, common.PaneDevice},
 		},
 	}
 

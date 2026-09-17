@@ -203,26 +203,34 @@ func FormatStationData(devices []Device) [][]string {
 
 // vpnWidths lays the VPN pane out on the known-networks grid.
 //
-// Name takes the first third, as it does there, and the four detail columns
-// land on the boundaries of the six above them:
+// Name takes the first third, as it does there, and the four detail columns are
+// placed so their *headings* sit under the headings above them:
 //
 //	Known:  │ Name │ Security │ DNS │ MAC  │ Hidden │ Auto │ Signal │
-//	VPN:    │ Name │    Type      │  Endpoint   │  DNS   │  Auto  │
+//	VPN:    │ Name │   Type   │    Endpoint         │  DNS │  Auto  │
 //
-// So Type begins where Security does, Endpoint where MAC does, DNS where Auto
-// does and Auto where Signal does. Derived by summing the known widths rather
-// than recomputing fractions, so the two cannot drift apart: the remainder
-// that cannot be split six ways is distributed unevenly, and any arithmetic
-// that ignored that would misalign by a column at most widths.
+// Type over Security, Endpoint over MAC, DNS over Auto, Auto over Signal.
+//
+// What matters is where the label lands, not where the column starts. A header
+// is centred in its column, so a column spanning two slots puts its label on
+// the seam between them -- which is how Type ended up sitting between Security
+// and DNS rather than over Security. Endpoint therefore takes three slots
+// rather than two: centred across DNS, MAC and Hidden, its label lands on the
+// middle one.
+//
+// Derived by summing the known widths rather than recomputing fractions, so
+// the two panes cannot drift apart: the remainder that will not divide six ways
+// is spread unevenly, and arithmetic that ignored that would misalign at most
+// widths.
 func vpnWidths() []int {
 	k := knownWidths() // marker, Name, Security, DNS, MAC, Hidden, Auto, Signal
 	return []int{
-		k[0],        // marker
-		k[1],        // Name
-		k[2] + k[3], // Type       spans Security + DNS
-		k[4] + k[5], // Endpoint   spans MAC + Hidden
-		k[6],        // DNS        over Auto
-		k[7],        // Auto       over Signal
+		k[0],               // marker
+		k[1],               // Name
+		k[2],               // Type      over Security
+		k[3] + k[4] + k[5], // Endpoint  over MAC, spanning DNS..Hidden
+		k[6],               // DNS       over Auto
+		k[7],               // Auto      over Signal
 	}
 }
 
@@ -350,6 +358,16 @@ func FormatSecurityData(services []SecurityService) [][]string {
 // knownDetailColumns is everything to the right of Name: Security, DNS, MAC,
 // Hidden, Auto, Signal.
 const knownDetailColumns = 6
+
+// VpnTypeColumnFitsFrom is the narrowest terminal at which the VPN pane's Type
+// column holds the longest label it can produce, OPENCONNECT at 11.
+//
+// Type is one grid slot wide, because that is what puts its heading under
+// Security's. It spanned two slots before, which fitted more but sat the
+// heading on the seam between two columns above it. Narrower than this and a
+// long plugin name shows as "OPENCO..." -- the cost of the alignment, and only
+// paid by the handful of plugins with names that long.
+const VpnTypeColumnFitsFrom = 93
 
 // KnownDetailColumnsFitFrom is the narrowest terminal at which every detail
 // column in the known-networks table is wide enough for the longest label it
