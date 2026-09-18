@@ -230,19 +230,25 @@ func ToggleVpnCmd(conn *dbus.Conn, vpnPath dbus.ObjectPath, activePath dbus.Obje
 		nm := conn.Object(network.NMDest, dbus.ObjectPath(network.NMPath))
 		var call *dbus.Call
 		action := "activate" // For error message
+		reported := vpnPath  // The path the error message should name
 
 		if !connect {
-			// Deactivate using the *active* connection path
 			action = "deactivate"
+			reported = activePath
 			// "" is an unset path and "/" is NetworkManager's empty one; the
 			// bus rejects both, the first as a malformed message rather than
 			// as an error naming the connection.
 			if activePath == "" || activePath == "/" {
 				return common.ErrMsg{Err: fmt.Errorf("cannot deactivate VPN: no active connection path found")}
 			}
-			activeConnObj := conn.Object(network.NMDest, activePath)
-			// Note: Deactivate is on the Active connection interface, not the main NM interface
-			call = activeConnObj.Call("org.freedesktop.NetworkManager.Connection.Active.Deactivate", 0)
+			// Both halves go through the manager: the active connection object
+			// carries state and properties but exports no methods of its own,
+			// so there is nothing to call on activePath itself.
+			call = nm.Call(
+				"org.freedesktop.NetworkManager.DeactivateConnection",
+				0,
+				activePath, // Active connection path, not the saved profile
+			)
 		} else {
 			// Activate using the *saved* connection path
 			call = nm.Call(
@@ -255,7 +261,7 @@ func ToggleVpnCmd(conn *dbus.Conn, vpnPath dbus.ObjectPath, activePath dbus.Obje
 		}
 
 		if call.Err != nil {
-			return common.ErrMsg{Err: fmt.Errorf("failed to %s vpn connection '%s': %w", action, vpnPath, call.Err)}
+			return common.ErrMsg{Err: fmt.Errorf("failed to %s vpn connection '%s': %w", action, reported, call.Err)}
 		}
 		// Success handled by signal listener
 		return nil
