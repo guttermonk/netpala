@@ -283,9 +283,85 @@ func GetConfigPath() (string, error) {
 	return filepath.Join(configDir, "netpala", "config.toml"), nil
 }
 
-// Load loads the configuration from the config file
-// If the file doesn't exist, it creates one with default values
+// ColorOverlayPath returns the optional second color file, layered over the
+// [colors] table of the config.
+//
+// It is for tools that recolor a desktop from the current wallpaper --
+// wallust, pywal -- which re-extract a palette on every wallpaper change and
+// have no business owning a config file that also holds your keybindings.
+// Such a tool renders the overlay; netpala is a fresh process every time it
+// starts, so the next run already has the new colors.
+//
+// Set NETPALA_COLORS_OVERLAY to read it from somewhere else.
+func ColorOverlayPath() string {
+	if path := os.Getenv("NETPALA_COLORS_OVERLAY"); path != "" {
+		return path
+	}
+
+	cacheDir := os.Getenv("XDG_CACHE_HOME")
+	if cacheDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		cacheDir = filepath.Join(homeDir, ".cache")
+	}
+
+	return filepath.Join(cacheDir, "wallust", "colors-netpala.toml")
+}
+
+// applyColorOverlay lets the overlay win for the colors it names, leaving the
+// rest of the config as it was.
+//
+// Per key rather than per file: an overlay naming only `error` leaves the other
+// seven alone, which is what makes a partial template from a wallpaper tool
+// safe. A missing, unreadable or malformed overlay is the normal state -- it
+// means "use the config" -- and does nothing at all.
+func applyColorOverlay(cfg *Config) {
+	path := ColorOverlayPath()
+	if path == "" {
+		return
+	}
+
+	var overlay struct {
+		Colors Colors `toml:"colors"`
+	}
+	if _, err := toml.DecodeFile(path, &overlay); err != nil {
+		return
+	}
+
+	set := func(dst *string, src string) {
+		if src != "" {
+			*dst = src
+		}
+	}
+	set(&cfg.Colors.Primary, overlay.Colors.Primary)
+	set(&cfg.Colors.Active, overlay.Colors.Active)
+	set(&cfg.Colors.ActiveText, overlay.Colors.ActiveText)
+	set(&cfg.Colors.SelectionBg, overlay.Colors.SelectionBg)
+	set(&cfg.Colors.Inactive, overlay.Colors.Inactive)
+	set(&cfg.Colors.Error, overlay.Colors.Error)
+	set(&cfg.Colors.ErrorText, overlay.Colors.ErrorText)
+	set(&cfg.Colors.HelpText, overlay.Colors.HelpText)
+}
+
+// Load loads the configuration from the config file, then lets the color
+// overlay win for anything it names.
+//
+// A wrapper rather than four insertions: load returns on several paths -- no
+// config path, no config file, a parse failure -- and the overlay has to apply
+// to every one of them, defaults included.
 func Load() (*Config, error) {
+	cfg, err := load()
+	if cfg != nil {
+		applyColorOverlay(cfg)
+	}
+	return cfg, err
+}
+
+// load loads the configuration from the config file
+// If the file doesn't exist, it creates one with default values
+func load() (*Config, error) {
 	configPath, err := GetConfigPath()
 	if err != nil {
 		cfg := DefaultConfig()
