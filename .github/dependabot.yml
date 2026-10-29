@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # No HTTP client here, but netpala parses input it does not control: SSIDs
+  # off the air and replies over D-Bus. go.mod is the only manifest.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # The bubbletea/lipgloss/x-ansi family moves constantly; one PR for the
+    # patch stream, separate PRs for minor and major.
+    groups:
+      patch:
+        update-types:
+          - "patch"
+
+  # .github/workflows/go.yml is still on actions/checkout@v4 and
+  # actions/setup-go@v4; expect PRs for both on the first run.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
