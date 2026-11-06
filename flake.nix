@@ -54,6 +54,13 @@
           buildInputs = with pkgs; [
             dbus
           ];
+
+          # Let taskbars and launchers resolve the window (app_id "netpala")
+          # to a name and icon instead of guessing from the window title.
+          postInstall = ''
+            install -Dm644 ${./packaging/netpala.desktop} \
+              $out/share/applications/netpala.desktop
+          '';
         };
       in
       {

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Netpala
+GenericName=Network Manager
+Comment=A lightweight terminal-friendly NetworkManager wrapper
+Exec=netpala
+Icon=network-wireless
+Terminal=true
+Categories=Network;ConsoleOnly;
+Keywords=network;wifi;wireless;vpn;networkmanager;tui;
+StartupWMClass=netpala
