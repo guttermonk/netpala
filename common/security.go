@@ -25,10 +25,13 @@ const (
 	LabelSAE    = "wpa3-sae"
 	LabelEAP    = "wpa2-eap"
 	LabelEAP192 = "wpa3-eap-192"
-	// WEP, and a saved profile whose key management is none of the above.
-	// Neither has a scan-result spelling: an access point offering nothing
-	// recognisable reads as open.
-	LabelWEP     = "wep"
+	// WEP is a saved profile keyed with "none", and an access point that
+	// encrypts while advertising no key management at all -- there being no
+	// WPA or RSN flags to advertise it in.
+	LabelWEP = "wep"
+	// Keyed with something else again, which only a saved profile can be:
+	// an access point has flags, and they either say a mechanism or they do
+	// not.
 	LabelUnknown = "encrypted"
 	// LabelSeparator joins the mechanisms of an access point offering several.
 	LabelSeparator = " / "
@@ -50,6 +53,14 @@ const (
 	SecurityEAP
 	SecurityOWE
 	SecurityOpen
+	// WEP is not a mechanism netpala can join a network with: the profile it
+	// needs is nothing like the others -- no key management, the key in
+	// wep-key0, and a key type that cannot be told from the key itself. It is
+	// named so that a WEP network can be refused with a reason, which is
+	// better than being joined with a profile that cannot work. An already
+	// saved WEP profile still connects: NetworkManager holds the key, and
+	// activating it does not come through here.
+	SecurityWEP
 )
 
 func (m SecurityMechanism) String() string {
@@ -62,12 +73,15 @@ func (m SecurityMechanism) String() string {
 		return "owe"
 	case SecurityOpen:
 		return "open"
+	case SecurityWEP:
+		return "wep"
 	}
 	return "psk"
 }
 
 // NeedsPassword reports whether joining the network means asking for one.
-// OWE derives its own keys and an open network has none.
+// OWE derives its own keys, an open network has none, and WEP is refused
+// before it gets as far as a prompt.
 func (m SecurityMechanism) NeedsPassword() bool {
 	return m == SecurityPSK || m == SecuritySAE
 }
@@ -111,8 +125,10 @@ func MechanismFor(security string) SecurityMechanism {
 		return SecurityOWE
 	case has(LabelOpen):
 		return SecurityOpen
+	case has(LabelWEP):
+		return SecurityWEP
 	}
-	// Unrecognised, which includes LabelWEP and LabelUnknown: both are keyed
-	// with something, and asking which key is the only way to find out.
+	// Unrecognised, which includes LabelUnknown: keyed with something, and
+	// asking which key is the only way to find out.
 	return SecurityPSK
 }

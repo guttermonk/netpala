@@ -1128,6 +1128,12 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// derives one per association without a shared secret.
 					wifiDevice := m.DeviceData[0]
 					return m, dbus.AddAndConnectToNetworkCmd(m.Conn, m.SelectedNetwork, "", wifiDevice.Path)
+				case common.SecurityWEP:
+					// Said rather than attempted. netpala cannot build a WEP
+					// profile, and asking for the key and then saving one that
+					// cannot work is a worse answer than this one.
+					return m, m.Alert.NewAlertCmd(bubbleup.WarnKey,
+						"WEP is not supported. Use nmcli to add this network.")
 				default:
 					// PSK or SAE, which is most of them.
 					m.PopupState = 2

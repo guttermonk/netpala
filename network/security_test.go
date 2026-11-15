@@ -88,6 +88,7 @@ func TestAMalformedKeyManagementIsNotFatal(t *testing.T) {
 // either pane.
 func TestScanFlagsProduceTheSameLabels(t *testing.T) {
 	const (
+		privacy = 0x00000001
 		psk     = 0x00000100
 		eap     = 0x00000200
 		sae     = 0x00000400
@@ -98,26 +99,35 @@ func TestScanFlagsProduceTheSameLabels(t *testing.T) {
 	)
 
 	for _, tt := range []struct {
-		name     string
-		wpa, rsn uint32
-		want     string
+		name         string
+		ap, wpa, rsn uint32
+		want         string
 	}{
-		{"nothing advertised", noFlags, noFlags, common.LabelOpen},
-		{"psk on wpa", psk, noFlags, common.LabelPSK},
-		{"psk on rsn", noFlags, psk, common.LabelPSK},
-		{"eap", noFlags, eap, common.LabelEAP},
-		{"sae", noFlags, sae, common.LabelSAE},
-		{"owe", noFlags, owe, common.LabelOWE},
-		{"owe transition mode", noFlags, oweTM, common.LabelOWE},
-		{"suite b 192", noFlags, suiteB, common.LabelEAP192},
-		{"transition mode", noFlags, sae | psk,
+		{"nothing advertised", noFlags, noFlags, noFlags, common.LabelOpen},
+		{"psk on wpa", privacy, psk, noFlags, common.LabelPSK},
+		{"psk on rsn", privacy, noFlags, psk, common.LabelPSK},
+		{"eap", privacy, noFlags, eap, common.LabelEAP},
+		{"sae", privacy, noFlags, sae, common.LabelSAE},
+		{"owe", privacy, noFlags, owe, common.LabelOWE},
+		{"owe transition mode", privacy, noFlags, oweTM, common.LabelOWE},
+		{"suite b 192", privacy, noFlags, suiteB, common.LabelEAP192},
+		{"transition mode", privacy, noFlags, sae | psk,
 			common.LabelSAE + common.LabelSeparator + common.LabelPSK},
-		{"enterprise and personal", noFlags, eap | psk,
+		{"enterprise and personal", privacy, noFlags, eap | psk,
 			common.LabelEAP + common.LabelSeparator + common.LabelPSK},
+
+		// Encrypting with nothing to announce about how. WEP has no key
+		// management to put in either set, so this is the only thing it looks
+		// like -- and it used to look exactly like an open network.
+		{"privacy and nothing else", privacy, noFlags, noFlags, common.LabelWEP},
+		// The privacy bit is not consulted when the access point says what it
+		// uses, so a reader that sets it oddly cannot turn WPA into WEP.
+		{"no privacy bit but psk anyway", noFlags, noFlags, psk, common.LabelPSK},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := getSecurityType(tt.wpa, tt.rsn); got != tt.want {
-				t.Errorf("getSecurityType(%#x, %#x) = %q, want %q", tt.wpa, tt.rsn, got, tt.want)
+			if got := getSecurityType(tt.ap, tt.wpa, tt.rsn); got != tt.want {
+				t.Errorf("getSecurityType(%#x, %#x, %#x) = %q, want %q",
+					tt.ap, tt.wpa, tt.rsn, got, tt.want)
 			}
 		})
 	}
@@ -133,9 +143,10 @@ func TestEveryLabelEitherProducerEmitsIsClassifiable(t *testing.T) {
 		securityLabel(settingsWith(nil)),
 	}
 	fromScans := []string{
-		getSecurityType(0, 0), getSecurityType(0, 0x100), getSecurityType(0, 0x200),
-		getSecurityType(0, 0x400), getSecurityType(0, 0x800), getSecurityType(0, 0x2000),
-		getSecurityType(0, 0x400|0x100),
+		getSecurityType(0, 0, 0), getSecurityType(1, 0, 0),
+		getSecurityType(1, 0, 0x100), getSecurityType(1, 0, 0x200),
+		getSecurityType(1, 0, 0x400), getSecurityType(1, 0, 0x800),
+		getSecurityType(1, 0, 0x2000), getSecurityType(1, 0, 0x400|0x100),
 	}
 
 	for _, label := range append(fromProfiles, fromScans...) {

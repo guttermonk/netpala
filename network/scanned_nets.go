@@ -62,9 +62,15 @@ func GetScannedNetworks(c *dbus.Conn) []common.ScannedNetwork {
 			}
 
 			ap := c.Object(NMDest, apPath)
+			// Flags as well as the two key-management sets: WEP announces
+			// itself only by encrypting without any of them.
+			apFlagsVar, _ := ap.GetProperty("org.freedesktop.NetworkManager.AccessPoint.Flags")
 			wpaFlagsVar, _ := ap.GetProperty("org.freedesktop.NetworkManager.AccessPoint.WpaFlags")
 			rsnFlagsVar, _ := ap.GetProperty("org.freedesktop.NetworkManager.AccessPoint.RsnFlags")
-			var wpaFlags, rsnFlags uint32
+			var apFlags, wpaFlags, rsnFlags uint32
+			if val, ok := apFlagsVar.Value().(uint32); ok {
+				apFlags = val
+			}
 			if val, ok := wpaFlagsVar.Value().(uint32); ok {
 				wpaFlags = val
 			}
@@ -76,7 +82,7 @@ func GetScannedNetworks(c *dbus.Conn) []common.ScannedNetwork {
 				Path:     apPath,
 				SSID:     common.SanitizeSSID(ssid, "[?]"),
 				BSSID:    bssid,
-				Security: getSecurityType(wpaFlags, rsnFlags),
+				Security: getSecurityType(apFlags, wpaFlags, rsnFlags),
 				Signal:   signal,
 			})
 		}
@@ -84,8 +90,15 @@ func GetScannedNetworks(c *dbus.Conn) []common.ScannedNetwork {
 	return removeDuplicates(allNetworks)
 }
 
-func getSecurityType(wpaFlags, rsnFlags uint32) string {
+func getSecurityType(apFlags, wpaFlags, rsnFlags uint32) string {
 	const (
+		// Set when the access point encrypts, whichever way it does it. On its
+		// own, with no key management advertised in either set, that is WEP:
+		// WEP predates WPA and has nothing to announce in WpaFlags or
+		// RsnFlags, so a WEP network read as having no security at all and sat
+		// in the list looking like one that could be joined by pressing enter.
+		NM_802_11_AP_FLAGS_PRIVACY = 0x00000001
+
 		NM_802_11_AP_SEC_KEY_MGMT_PSK             = 0x00000100
 		NM_802_11_AP_SEC_KEY_MGMT_802_1X          = 0x00000200
 		NM_802_11_AP_SEC_KEY_MGMT_SAE             = 0x00000400
@@ -115,6 +128,9 @@ func getSecurityType(wpaFlags, rsnFlags uint32) string {
 		security = append(security, common.LabelOWE)
 	}
 	if len(security) == 0 {
+		if apFlags&NM_802_11_AP_FLAGS_PRIVACY != 0 {
+			return common.LabelWEP
+		}
 		return common.LabelOpen
 	}
 	return strings.Join(security, common.LabelSeparator)

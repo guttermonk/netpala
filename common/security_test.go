@@ -17,7 +17,7 @@ func TestMechanismForEveryLabel(t *testing.T) {
 		{LabelSAE, SecuritySAE, "SAE with nothing else offered"},
 		{LabelEAP, SecurityEAP, ""},
 		{LabelEAP192, SecurityEAP, "enterprise, and not a password prompt"},
-		{LabelWEP, SecurityPSK, "keyed with something, so ask what"},
+		{LabelWEP, SecurityWEP, "named so it can be refused with a reason"},
 		{LabelUnknown, SecurityPSK, "keyed with something, so ask what"},
 
 		// Access points offering more than one.
@@ -52,7 +52,7 @@ func TestOnlyPskAndSaeAskForAPassword(t *testing.T) {
 			t.Errorf("%s does not ask for a password", m)
 		}
 	}
-	for _, m := range []SecurityMechanism{SecurityOpen, SecurityOWE, SecurityEAP} {
+	for _, m := range []SecurityMechanism{SecurityOpen, SecurityOWE, SecurityEAP, SecurityWEP} {
 		if m.NeedsPassword() {
 			t.Errorf("%s asks for a password", m)
 		}

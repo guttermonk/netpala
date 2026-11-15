@@ -64,6 +64,31 @@ func TestEachMechanismReachesTheRightPrompt(t *testing.T) {
 	}
 }
 
+// WEP is said rather than attempted. The profile it would need is nothing like
+// the others, so asking for the key and then saving one that cannot work is a
+// worse answer than refusing with a reason -- and it used to be worse still:
+// an access point that encrypts without advertising any key management read as
+// open, so enter tried to join it with no security at all.
+func TestWepIsRefusedRatherThanAttempted(t *testing.T) {
+	m := scannedWith(common.LabelWEP)
+
+	next, cmd := m.Update(selectKey())
+	got := next.(NetpalaData)
+
+	if got.PopupState != popupNone {
+		t.Errorf("PopupState = %d, want no popup -- there is nothing to ask", got.PopupState)
+	}
+	if cmd == nil {
+		t.Fatal("nothing happened at all; the refusal has to be said")
+	}
+	// Safe to run: an alert does not touch D-Bus, which is the point of
+	// checking what this is rather than that it is non-nil. A connection
+	// command would panic here, and so would have told us too.
+	if msg := cmd(); msg == nil {
+		t.Error("the alert produced no message")
+	}
+}
+
 // And the EAP form is handed the network either way round, so the profile it
 // builds activates on the access point that was selected.
 func TestTheEapFormIsSetUpForWhicheverEapStringArrived(t *testing.T) {
