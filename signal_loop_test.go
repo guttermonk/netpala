@@ -82,6 +82,7 @@ func TestDataHandlersDoNotArmAListener(t *testing.T) {
 		{"device", common.DeviceUpdateMsg{{Name: "wlan0"}}},
 		{"known networks", common.KnownNetworksUpdateMsg{{SSID: "home"}}},
 		{"scan results", common.ScannedNetworksUpdateMsg{{SSID: "cafe"}}},
+		{"scanning flag", common.ScanningStateMsg{DevicePath: "/dev/0", Scanning: true}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, cmd, handled := m.handleDataMsg(tt.msg)

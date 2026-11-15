@@ -52,8 +52,8 @@ func signalRefresh(conn *dbus.Conn, s *dbus.Signal) []tea.Cmd {
 	switch s.Name {
 	case "org.freedesktop.DBus.Properties.PropertiesChanged":
 		// Body[0] is the interface whose properties changed. The manager
-		// carries WirelessEnabled; the two device interfaces carry the state
-		// and scanning flags the Device pane shows.
+		// carries WirelessEnabled; the two device interfaces carry the device
+		// state and the scanning flag.
 		if len(s.Body) == 0 {
 			return nil
 		}
@@ -63,6 +63,20 @@ func signalRefresh(conn *dbus.Conn, s *dbus.Signal) []tea.Cmd {
 		}
 		if iface != network.NMDest && iface != network.DevIF && iface != network.WifiIF {
 			return nil
+		}
+		// A scan starting and finishing is two of these, and the only thing
+		// either one changes is a flag the signal is already carrying. Reading
+		// it out of the body is both cheaper than a device and VPN re-read for
+		// something no connection depends on, and the only way to get it right:
+		// the round trip regularly lands after NetworkManager has finished
+		// scanning, so both signals re-read Scanning as false and it never
+		// appears to have been true at all.
+		if iface == network.WifiIF {
+			if scanning, ok := scanningFlag(s); ok {
+				return []tea.Cmd{func() tea.Msg {
+					return common.ScanningStateMsg{DevicePath: s.Path, Scanning: scanning}
+				}}
+			}
 		}
 		return []tea.Cmd{devices, vpn}
 
@@ -83,6 +97,25 @@ func signalRefresh(conn *dbus.Conn, s *dbus.Signal) []tea.Cmd {
 		return []tea.Cmd{func() tea.Msg { return common.ScannedNetworksUpdateMsg(nil) }}
 	}
 	return nil
+}
+
+// scanningFlag is the Scanning property out of a PropertiesChanged body, and
+// whether this signal carried it at all. Body[1] is the changed-properties
+// dictionary; a signal about some other property leaves it absent.
+func scanningFlag(s *dbus.Signal) (bool, bool) {
+	if len(s.Body) < 2 {
+		return false, false
+	}
+	changed, ok := s.Body[1].(map[string]dbus.Variant)
+	if !ok {
+		return false, false
+	}
+	v, ok := changed["Scanning"]
+	if !ok {
+		return false, false
+	}
+	scanning, ok := v.Value().(bool)
+	return scanning, ok
 }
 
 // Command to periodically trigger a full data refresh.

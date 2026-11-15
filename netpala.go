@@ -1410,6 +1410,19 @@ func (m NetpalaData) applyDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
 		m.DeviceData = msg
 		return m, nil, true
 
+	case common.ScanningStateMsg:
+		// The flag, on the device that reported it, in place: reading the list
+		// back from NetworkManager is the thing this message exists to avoid.
+		// Mutating the slice is safe because the model it came from is on its
+		// way out -- Update is handed a copy and the previous one is dropped.
+		for i := range m.DeviceData {
+			if m.DeviceData[i].Path == msg.DevicePath {
+				m.DeviceData[i].Scanning = msg.Scanning
+				break
+			}
+		}
+		return m, nil, true
+
 	case common.VpnUpdateMsg:
 		m.VpnProfiles = msg
 		m.rebuildVpnData()

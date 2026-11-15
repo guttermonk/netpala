@@ -43,6 +43,15 @@ type VpnProvidersUpdateMsg []VpnConnection
 type RefreshVpnProvidersMsg struct{}
 type SecurityUpdateMsg []SecurityService
 type DeviceUpdateMsg []Device
+
+// ScanningStateMsg carries one device's Scanning flag, taken from the signal
+// that announced it. A scan starting or finishing changes nothing else, so it
+// does not need the device list read back from NetworkManager -- see
+// dbus.WaitForDBusSignal.
+type ScanningStateMsg struct {
+	DevicePath dbus.ObjectPath
+	Scanning   bool
+}
 type KnownNetworksUpdateMsg []KnownNetwork
 type ScannedNetworksUpdateMsg []ScannedNetwork
 type ErrMsg struct{ Err error }
