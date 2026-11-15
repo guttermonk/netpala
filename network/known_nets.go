@@ -26,21 +26,12 @@ func GetKnownNetworks(conn *dbus.Conn) []common.KnownNetwork {
 	for _, d := range devs {
 		obj := conn.Object(NMDest, d)
 
-		// --- FIX 1 START ---
-		// Safely check DeviceType. If err != nil or value is nil, skip.
-		t, err := obj.GetProperty("org.freedesktop.NetworkManager.Device.DeviceType")
-		if err != nil {
+		// A device that has gone since GetDevices answered is not Wi-Fi as far
+		// as this loop is concerned. See IsWifiType.
+		t, _ := obj.GetProperty(DevIF + ".DeviceType")
+		if !IsWifiType(t) {
 			continue
 		}
-		val := t.Value()
-		if val == nil {
-			continue
-		}
-		// 2 = WiFi. If not uint32 or not 2, skip.
-		if dType, ok := val.(uint32); !ok || dType != 2 {
-			continue
-		}
-		// --- FIX 1 END ---
 
 		if apsVar, err := obj.GetProperty("org.freedesktop.NetworkManager.Device.Wireless.AccessPoints"); err == nil {
 			if paths, ok := apsVar.Value().([]dbus.ObjectPath); ok {
@@ -71,20 +62,12 @@ func GetKnownNetworks(conn *dbus.Conn) []common.KnownNetwork {
 	for _, d := range devs {
 		obj := conn.Object(NMDest, d)
 
-		// --- FIX 2 START ---
-		// Repeat safe check here. The device list is the same, but state might have changed.
-		t, err := obj.GetProperty("org.freedesktop.NetworkManager.Device.DeviceType")
-		if err != nil {
+		// Checked again: the device list is the same one, but a device may have
+		// gone between the two loops.
+		t, _ := obj.GetProperty(DevIF + ".DeviceType")
+		if !IsWifiType(t) {
 			continue
 		}
-		val := t.Value()
-		if val == nil {
-			continue
-		}
-		if dType, ok := val.(uint32); !ok || dType != 2 {
-			continue
-		}
-		// --- FIX 2 END ---
 
 		if apVar, err := obj.GetProperty("org.freedesktop.NetworkManager.Device.Wireless.ActiveAccessPoint"); err == nil {
 			if apPath, ok := apVar.Value().(dbus.ObjectPath); ok && apPath != "/" {

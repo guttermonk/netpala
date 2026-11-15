@@ -7,6 +7,7 @@ import (
 	"netpala/dbus"
 	"netpala/models"
 	"netpala/network"
+	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -747,7 +748,10 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			unit := m.pendingStartUnit
 			m.pendingStartUnit = ""
 
-			listen := dbus.WaitForDBusSignal(m.Conn, m.DBusSignals)
+			// Nothing here arms a listener: the one from Init re-arms itself
+			// and has been waiting throughout, popup or no popup. These paths
+			// used to attach one to every answer, which left another reader
+			// parked on the channel each time a prompt was answered.
 
 			// Declining this one is an answer rather than an abort: the unit
 			// starts either way, and "no" only means DNS stays where it is.
@@ -755,16 +759,16 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if action == confirmApplyResolver {
 				svc, ok := m.securityServiceByUnit(unit)
 				if !ok || svc.Active {
-					return m, listen
+					return m, nil
 				}
 				if msg.Value {
-					return m, tea.Batch(m.toggleSecurityWithResolverCmd(svc), listen)
+					return m, m.toggleSecurityWithResolverCmd(svc)
 				}
-				return m, tea.Batch(m.toggleSecurityCmd(svc), listen)
+				return m, m.toggleSecurityCmd(svc)
 			}
 
 			if !msg.Value { // User cancelled
-				return m, listen
+				return m, nil
 			}
 
 			switch action {
@@ -775,7 +779,7 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// now would stop the very thing being consented to.
 				svc, ok := m.securityServiceByUnit(unit)
 				if !ok || svc.Active {
-					return m, listen
+					return m, nil
 				}
 				// Consent covered starting it. If it also answers DNS, whether
 				// this machine should resolve through it is a second question,
@@ -783,9 +787,9 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// first one's "yes".
 				if m.shouldAskApplyResolver(svc) {
 					m.openApplyResolverConfirmation(svc)
-					return m, listen
+					return m, nil
 				}
-				return m, tea.Batch(m.toggleSecurityCmd(svc), listen)
+				return m, m.toggleSecurityCmd(svc)
 
 			case confirmDeleteVpn:
 				target := m.VpnTarget
@@ -793,12 +797,11 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Deleting a live VPN is allowed; NetworkManager tears the
 				// tunnel down as part of removing the profile. The Wi-Fi
 				// connection underneath it is untouched either way.
-				return m, tea.Batch(dbus.DeleteConnectionCmd(m.Conn, target.Path), listen)
+				return m, dbus.DeleteConnectionCmd(m.Conn, target.Path)
 
 			default: // confirmDeleteNetwork
 				// NOTE: Ensure m.SelectedNetwork holds the correct data before entering state 1
-				deleteCmd := dbus.DeleteConnectionCmd(m.Conn, m.SelectedNetwork.Path)
-				return m, tea.Batch(deleteCmd, listen)
+				return m, dbus.DeleteConnectionCmd(m.Conn, m.SelectedNetwork.Path)
 			}
 
 		default: // If it's not a SubmitConfirmationMsg...
@@ -1019,27 +1022,6 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, statusCmd)
 
 		return m, tea.Batch(cmds...)
-
-	case common.PeriodicRefreshMsg:
-		return m, tea.Batch(
-			dbus.RefreshAllData(m.Conn),
-			// Re-read unit state so a systemctl change made elsewhere shows up.
-			func() tea.Msg {
-				return common.SecurityUpdateMsg(
-					network.GetSecurityServices(m.Conn, m.Config.Security.Services))
-			},
-			// Vendor daemons are read from systemd and the kernel rather than
-			// from NetworkManager, so no D-Bus signal announces their changes.
-			// The tick is the only thing that notices.
-			m.refreshVpnProvidersCmd(),
-			func() tea.Msg {
-				return common.DnsStateMsg{
-					Effective: common.SystemResolvers(),
-					Applied:   network.AppliedResolvers(m.Conn),
-				}
-			},
-			dbus.RefreshTicker(),
-		)
 
 	case tea.KeyMsg:
 		keyStr := msg.String()
@@ -1348,7 +1330,13 @@ func (m NetpalaData) View() string {
 }
 
 func main() {
-	tea.NewProgram(NetpalaModel(), tea.WithAltScreen()).Run()
+	// Say why the window went away. Bubbletea turns a panic in a command
+	// goroutine into a cancelled program, so dropping this error meant netpala
+	// closed mid-session with nothing on the terminal to explain it.
+	if _, err := tea.NewProgram(NetpalaModel(), tea.WithAltScreen()).Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "netpala exited:", err)
+		os.Exit(1)
+	}
 }
 
 func updateOverlayModel(m NetpalaData, popup tea.Model) overlay.Model {
@@ -1372,11 +1360,27 @@ func updateOverlayModel(m NetpalaData, popup tea.Model) overlay.Model {
 // These must land whether or not a popup is open, so Update dispatches them
 // before the popup switch. handled is false for anything else, leaving key
 // presses and window resizes to the popup and the main switch.
+//
+// Every one of these messages can shorten a pane under the cursor, so the
+// clamp is applied here rather than inside the individual cases. Written out
+// per case it was missed twice -- the scan results and the device list both
+// replaced their slice and left the cursor wherever it had been, which is an
+// index out of range the next time a key reaches for the row under it. The
+// body below returns on a dozen paths and the clamp has to apply to all of
+// them, so it is a wrapper around applyDataMsg rather than a line in each.
 func (m NetpalaData) handleDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
+	next, cmd, handled := m.applyDataMsg(msg)
+	if handled {
+		next.clampSelection()
+	}
+	return next, cmd, handled
+}
+
+func (m NetpalaData) applyDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case common.DeviceUpdateMsg:
 		m.DeviceData = msg
-		return m, dbus.WaitForDBusSignal(m.Conn, m.DBusSignals), true
+		return m, nil, true
 
 	case common.VpnUpdateMsg:
 		m.VpnProfiles = msg
@@ -1391,9 +1395,37 @@ func (m NetpalaData) handleDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
 	case common.RefreshVpnProvidersMsg:
 		return m, m.refreshVpnProvidersCmd(), true
 
+	// The tick belongs with the data messages, not in the main switch. Every
+	// popup forwards what it does not recognise to its own model and returns,
+	// so a tick that arrived while one was open never reached the handler --
+	// and the handler is the only thing that re-arms the timer. tea.Tick fires
+	// once, so the periodic refresh stopped for the rest of the session the
+	// first time a prompt happened to be up when it landed. Connecting to a
+	// network puts the password prompt on screen, which is exactly when it
+	// was most likely to be lost.
+	case common.PeriodicRefreshMsg:
+		return m, tea.Batch(
+			dbus.RefreshAllData(m.Conn),
+			// Re-read unit state so a systemctl change made elsewhere shows up.
+			func() tea.Msg {
+				return common.SecurityUpdateMsg(
+					network.GetSecurityServices(m.Conn, m.Config.Security.Services))
+			},
+			// Vendor daemons are read from systemd and the kernel rather than
+			// from NetworkManager, so no D-Bus signal announces their changes.
+			// The tick is the only thing that notices.
+			m.refreshVpnProvidersCmd(),
+			func() tea.Msg {
+				return common.DnsStateMsg{
+					Effective: common.SystemResolvers(),
+					Applied:   network.AppliedResolvers(m.Conn),
+				}
+			},
+			dbus.RefreshTicker(),
+		), true
+
 	case common.SecurityUpdateMsg:
 		m.SecurityData = msg
-		m.clampSelection()
 		return m, nil, true
 
 	case common.DnsStateMsg:
@@ -1402,30 +1434,29 @@ func (m NetpalaData) handleDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
 		return m, nil, true
 
 	case common.KnownNetworksUpdateMsg:
-		m.FilterKnownFromScanned()
+		// Assigned before the filter runs, not after: the filter takes the
+		// saved SSIDs out of the scan list, so running it against the list
+		// being replaced left a network that had just been saved sitting in
+		// New Networks until the next scan came in.
 		m.KnownNetworks = msg
-		m.clampSelection()
+		m.FilterKnownFromScanned()
 
-		cmds := []tea.Cmd{dbus.WaitForDBusSignal(m.Conn, m.DBusSignals)}
-		if onConnect := m.onConnectionChanged(); onConnect != nil {
-			cmds = append(cmds, onConnect)
-		}
-		return m, tea.Batch(cmds...), true
+		// No listener here: WaitForDBusSignal re-arms itself, and arming one
+		// from this handler too is what used to double the reader count.
+		return m, m.onConnectionChanged(), true
 
 	case common.ScannedNetworksUpdateMsg:
-		// The `nil` message is the trigger from the listener.
+		// The `nil` message is the trigger from the listener. Access points
+		// come and go constantly, so the scan itself waits for the churn to
+		// settle rather than running once per signal.
 		if msg == nil {
-			debounceCmd := tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+			return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
 				return common.PerformScanRefreshMsg{}
-			})
-			// Re-arm the main listener right away, but start the debounce timer.
-			return m, tea.Batch(dbus.WaitForDBusSignal(m.Conn, m.DBusSignals), debounceCmd), true
+			}), true
 		}
 		// This is the actual data from a completed scan.
 		m.ScannedNetworks = msg
 		m.FilterKnownFromScanned()
-
-		// No need to re-arm listener here, as it's handled by the debounce logic.
 		return m, nil, true
 
 	case common.PerformScanRefreshMsg:

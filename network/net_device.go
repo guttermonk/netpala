@@ -23,6 +23,27 @@ const (
 	AccessPointIF = "org.freedesktop.NetworkManager.AccessPoint"
 )
 
+// NMDeviceTypeWifi is NM_DEVICE_TYPE_WIFI.
+const NMDeviceTypeWifi = uint32(2)
+
+// IsWifiType reports whether a device's DeviceType property says Wi-Fi.
+//
+// Every caller walks the list GetDevices returned and then reads properties
+// off each path, which is a second round trip -- and the device can be gone by
+// the time it happens. Switching the radio off does exactly that, which is why
+// a toggle used to be able to take netpala down: a departed device answers
+// with no properties, the property is absent, and asserting uint32 on the
+// resulting nil panics rather than yielding a value to compare.
+//
+// Taking a Variant rather than the map suits both shapes of caller: those that
+// fetch every property with GetProps, and those that ask for this one alone
+// with GetProperty. A zero Variant -- an absent key, or a failed read -- is
+// simply not Wi-Fi, which is the answer that makes the loop skip on.
+func IsWifiType(v dbus.Variant) bool {
+	dType, ok := v.Value().(uint32)
+	return ok && dType == NMDeviceTypeWifi
+}
+
 func GetDevicesData(c *dbus.Conn) []common.Device {
 	var devicesList []common.Device
 	nm := c.Object(NMDest, dbus.ObjectPath(NMPath))
@@ -66,20 +87,11 @@ func GetDevicesData(c *dbus.Conn) []common.Device {
 		obj := c.Object(NMDest, d)
 		dp := GetProps(obj, DevIF)
 
-		// --- FIX START: Safe DeviceType Check ---
-		// When a VPN disconnects, the device might exist in the list 'devs',
-		// but by the time we fetch props, it's gone or empty.
-		rawType := dp["DeviceType"].Value()
-		if rawType == nil {
+		// The device can be gone by the time its properties are fetched -- a
+		// VPN disconnecting or the radio going down both do it. See IsWifiType.
+		if !IsWifiType(dp["DeviceType"]) {
 			continue
 		}
-
-		// Safely check type assertion
-		dType, ok := rawType.(uint32)
-		if !ok || dType != 2 { // 2 == Wifi
-			continue
-		}
-		// --- FIX END ---
 
 		deviceState := common.DeviceStateUnknown
 		if stateVar, ok := dp["State"]; ok {

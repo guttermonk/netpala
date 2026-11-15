@@ -2,8 +2,12 @@ package main
 
 import (
 	"netpala/common"
+	"netpala/config"
 	"reflect"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"go.dalton.dog/bubbleup"
 )
 
 func withData(vpns, security, known, scanned, devices int) NetpalaData {
@@ -130,6 +134,75 @@ func TestClampSelectionHandlesEmptyPane(t *testing.T) {
 	if m.SelectedEntry != 0 {
 		t.Errorf("SelectedEntry = %d for an empty pane, want 0", m.SelectedEntry)
 	}
+}
+
+// Every data message has to leave the cursor on a row that exists. Writing
+// the clamp out per case missed the scan results and the device list, both of
+// which replace their slice wholesale -- and a radio toggle empties the scan
+// list while the cursor can be well down it.
+func TestEveryDataMessageClampsTheCursor(t *testing.T) {
+	tests := []struct {
+		name string
+		pane int
+		msg  tea.Msg
+	}{
+		{"scan results shrink", common.PaneScanned,
+			common.ScannedNetworksUpdateMsg{{SSID: "one"}}},
+		{"scan results empty", common.PaneScanned,
+			common.ScannedNetworksUpdateMsg{}},
+		{"device list empties", common.PaneDevice,
+			common.DeviceUpdateMsg{}},
+		{"known networks shrink", common.PaneKnown,
+			common.KnownNetworksUpdateMsg{{SSID: "home"}}},
+		{"security units shrink", common.PaneSecurity,
+			common.SecurityUpdateMsg{{Name: "Tor"}}},
+		{"vpn profiles shrink", common.PaneVPN,
+			common.VpnUpdateMsg{{Name: "wg0"}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := withData(4, 4, 4, 4, 4)
+			m.selectedBox = tt.pane
+			m.SelectedEntry = 3
+
+			next, _, handled := m.handleDataMsg(tt.msg)
+			if !handled {
+				t.Fatalf("%T was not handled as a data message", tt.msg)
+			}
+
+			// The cursor has to sit on a real row of whatever pane it ended
+			// up on, which is what the Select handlers index with.
+			limit := next.paneEntryCount(next.selectedBox)
+			if next.SelectedEntry >= limit && !(next.SelectedEntry == 0 && limit == 0) {
+				t.Errorf("entry %d of pane %d, which holds %d rows: Select would panic",
+					next.SelectedEntry, next.selectedBox, limit)
+			}
+		})
+	}
+}
+
+// The crash as it actually happened: the cursor is partway down New Networks,
+// the radio goes off, the scan list empties, and the next Enter reaches for a
+// row that is no longer there.
+func TestSelectAfterTheScanListEmptiesDoesNotPanic(t *testing.T) {
+	m := withData(0, 0, 0, 6, 1)
+	cfg := config.DefaultConfig()
+	m.Config, m.KeyMap, m.PopupState = &cfg, config.NewAppKeyMap(&cfg), -1
+	m.Alert = *bubbleup.NewAlertModel(40, true, 10)
+	m.selectedBox = common.PaneScanned
+	m.SelectedEntry = 5
+
+	next, _, handled := m.handleDataMsg(common.ScannedNetworksUpdateMsg{})
+	if !handled {
+		t.Fatal("scan results should be handled as a data message")
+	}
+	if next.SelectedEntry != 0 {
+		t.Errorf("SelectedEntry = %d after the scan list emptied, want 0", next.SelectedEntry)
+	}
+
+	// Would have been an index out of range before the clamp moved up.
+	next.Update(tea.KeyMsg{Type: tea.KeyEnter})
 }
 
 func TestPaneEntryCount(t *testing.T) {

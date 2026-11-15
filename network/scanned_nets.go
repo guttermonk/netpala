@@ -1,7 +1,6 @@
 package network
 
 import (
-	"fmt"
 	"netpala/common"
 	"sort"
 	"strings"
@@ -19,21 +18,26 @@ func GetScannedNetworks(c *dbus.Conn) []common.ScannedNetwork {
 	nm := c.Object(NMDest, dbus.ObjectPath(NMPath))
 	var devPaths []dbus.ObjectPath
 	if err := nm.Call(NMDest+".GetDevices", 0).Store(&devPaths); err != nil {
-		fmt.Printf("failed to get devices: %v", err)
+		return nil
 	}
 
 	var allNetworks []common.ScannedNetwork
 	for _, devPath := range devPaths {
 		devObj := c.Object(NMDest, devPath)
 		devProps := GetProps(devObj, DevIF)
-		if devProps["DeviceType"].Value().(uint32) != 2 {
+
+		// Powering the radio off takes the device away between GetDevices and
+		// this read, which is why the toggle used to crash. See IsWifiType.
+		if !IsWifiType(devProps["DeviceType"]) {
 			continue
 		}
 
 		var apPaths []dbus.ObjectPath
-		if err := devObj.Call(WifiIF+".GetAllAccessPoints", 0).Store(&apPaths); err != nil {
-			fmt.Printf("failed to get access points: %v", err)
-		}
+		// The error is dropped rather than printed: this runs under the alt
+		// screen, where anything written to stdout lands in the middle of a
+		// rendered frame. A device losing its access points is the expected
+		// outcome of switching the radio off, not something to report.
+		_ = devObj.Call(WifiIF+".GetAllAccessPoints", 0).Store(&apPaths)
 
 		for _, apPath := range apPaths {
 			apObj := c.Object(NMDest, apPath)
@@ -50,12 +54,12 @@ func GetScannedNetworks(c *dbus.Conn) []common.ScannedNetwork {
 			}
 
 			bssid := ""
-			if bssidVal, ok := apProps["HwAddress"]; ok {
-				bssid = bssidVal.Value().(string)
+			if s, ok := apProps["HwAddress"].Value().(string); ok {
+				bssid = s
 			}
 			var signal int
-			if strengthVal, ok := apProps["Strength"]; ok {
-				signal = int(strengthVal.Value().(byte))
+			if b, ok := apProps["Strength"].Value().(byte); ok {
+				signal = int(b)
 			}
 
 			ap := c.Object(NMDest, apPath)

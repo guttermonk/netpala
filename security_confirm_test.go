@@ -30,21 +30,16 @@ func securityModel(svc common.SecurityService) NetpalaData {
 
 func selectKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEnter} }
 
-// startedAService reports whether a command batch carries an action alongside
-// the re-armed listener. Running the outer batch yields a BatchMsg holding the
-// children, so nothing underneath it is executed - which matters, because the
-// children talk to D-Bus and there is no bus in a test.
+// startedAService reports whether the answer issued an action at all.
 //
-// Only valid for the confirmation paths, which batch. The immediate-toggle
-// paths return a bare command that cannot be run here, so those assert only
-// that one was issued.
+// A command is never run here: every one of them talks to D-Bus and there is
+// no bus in a test. It used to have to look inside a batch, because these
+// paths returned the action packaged with a re-armed listener and so were
+// never nil either way. The listener re-arms itself now, which leaves these
+// returns carrying the action alone -- nil when there is nothing to do.
 func startedAService(t *testing.T, cmd tea.Cmd) bool {
 	t.Helper()
-	if cmd == nil {
-		return false
-	}
-	batch, ok := cmd().(tea.BatchMsg)
-	return ok && len(batch) > 1
+	return cmd != nil
 }
 
 func i2p(active bool) common.SecurityService {
