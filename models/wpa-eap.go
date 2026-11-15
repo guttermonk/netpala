@@ -20,7 +20,11 @@ type WpaEapForm struct {
 	CaCert     textinput.Model
 	focused    int
 
-	SSIDSelected   string
+	SSIDSelected string
+	// APSelected is the access point the SSID was chosen from, passed through
+	// to NetworkManager so it activates on that one rather than whichever it
+	// would otherwise pick out of the ones sharing the name.
+	APSelected     string
 	EapSelected    bool
 	Phase2Selected bool
 	DisableForm    func()
@@ -218,6 +222,7 @@ func (m WpaEapForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Submit form
 			config := map[string]string{
 				"ssid":        m.SSIDSelected,
+				"ap_path":     m.APSelected,
 				"eap":         m.EapMethod.Selected().(EAPMethod).Type,
 				"phase2-auth": m.Phase2Auth.Selected().(EAPMethod).Type,
 				"identity":    m.Identity.Value(),

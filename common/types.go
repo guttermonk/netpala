@@ -137,6 +137,11 @@ type KnownNetwork struct {
 }
 
 type ScannedNetwork struct {
+	// Path is the access point, not a saved profile: a scan result has no
+	// profile yet. NetworkManager takes it as the specific object when a
+	// connection is activated, which is how it is told to use the access point
+	// the signal column was describing -- several of them can share an SSID,
+	// and left to itself it picks one of them for you.
 	Path     dbus.ObjectPath
 	BSSID    string
 	SSID     string

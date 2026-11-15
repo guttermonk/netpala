@@ -143,79 +143,105 @@ func AddAndConnectEAPCmd(conn *dbus.Conn, config map[string]string, devicePath d
 			return common.ErrMsg{Err: fmt.Errorf("failed to generate UUID for EAP: %w", err)}
 		}
 
-		// 3. Build EAP settings
-		eapSettings := map[string]dbus.Variant{
-			"eap":      dbus.MakeVariant([]string{strings.ToLower(eapMethod)}),
-			"identity": dbus.MakeVariant(identity),
-			"password": dbus.MakeVariant(config["password"]),
-		}
-		if phase2, ok := config["phase2-auth"]; ok && phase2 != "" && phase2 != "NONE" {
-			eapSettings["phase2-auth"] = dbus.MakeVariant(strings.ToLower(phase2))
-		}
-		if certPath, ok := config["ca_cert"]; ok && certPath != "" {
-			eapSettings["ca-cert"] = dbus.MakeVariant("file://" + certPath)
-		}
+		// 3. Build the profile
+		settings := eapProfileSettings(config, ssid, eapMethod, identity, newUUID.String())
 
-		// 4. Build complete settings map
-		settings := map[string]map[string]dbus.Variant{
-			"connection": {
-				"id":          dbus.MakeVariant(ssid),
-				"uuid":        dbus.MakeVariant(newUUID.String()),
-				"type":        dbus.MakeVariant("802-11-wireless"),
-				"autoconnect": dbus.MakeVariant(true),
-			},
-			"802-11-wireless": {
-				"ssid":     dbus.MakeVariant([]byte(ssid)),
-				"mode":     dbus.MakeVariant("infrastructure"),
-				"security": dbus.MakeVariant("802-11-wireless-security"),
-			},
-			"802-11-wireless-security": {
-				"key-mgmt": dbus.MakeVariant("wpa-eap"),
-			},
-			"802-1x": eapSettings,
-			"ipv4":   {"method": dbus.MakeVariant("auto")},
-			"ipv6":   {"method": dbus.MakeVariant("auto")},
-		}
-
-		// 5. Add the connection via D-Bus
-		settingsObj := conn.Object(network.NMDest, "/org/freedesktop/NetworkManager/Settings")
-		call := settingsObj.Call("org.freedesktop.NetworkManager.Settings.AddConnection", 0, settings)
+		// 4. Add the profile and bring it up in one call.
+		//
+		// Adding and then activating is two round trips with a window between
+		// them, and the profile is created with autoconnect on, so
+		// NetworkManager is entitled to start activating it the moment it
+		// exists. The second call then arrives against a device already busy
+		// with the connection it was about to ask for. AddAndActivateConnection
+		// is the method that exists to avoid that, and it is also the only way
+		// to say which access point to use.
+		nm := conn.Object(network.NMDest, dbus.ObjectPath(network.NMPath))
+		call := nm.Call("org.freedesktop.NetworkManager.AddAndActivateConnection", 0,
+			settings, devicePath, specificObject(config["ap_path"]))
 		if call.Err != nil {
-			return common.ErrMsg{Err: fmt.Errorf("failed to add EAP connection: %w", call.Err)}
+			return common.ErrMsg{Err: fmt.Errorf("failed to add and activate EAP connection: %w", call.Err)}
 		}
 
-		// 6. Get the path (optional)
-		var newConnectionPath dbus.ObjectPath
-		err = call.Store(&newConnectionPath) // Store error
-
-		// 7. Create the delayed refresh command
+		// 5. Create the delayed refresh command
 		refreshCmd := tea.Tick(150*time.Millisecond, func(t time.Time) tea.Msg {
 			return common.RefreshKnownNetworksMsg{}
 		})
 
-		// 8. Create the optimistic update message
+		// 6. Create the optimistic update message
 		optimisticMsg := common.OptimisticAddMsg{
 			SSID:     ssid,
 			Security: "wpa2-eap", // Generally correct assumption for EAP
 		}
 
-		// 9. Batch commands based on success
-		var batchCmds []tea.Cmd
-		batchCmds = append(batchCmds, func() tea.Msg { return optimisticMsg }) // Send optimistic update first
-		batchCmds = append(batchCmds, refreshCmd)                              // Schedule real refresh
-
-		if err == nil {
-			// If we got the path, attempt connection
-			batchCmds = append(batchCmds, ConnectToNetworkCmd(conn, newConnectionPath, devicePath))
-		} else {
-			// If we didn't get the path, report the error but still refresh
-			batchCmds = append(batchCmds, func() tea.Msg {
-				return common.ErrMsg{Err: fmt.Errorf("added EAP connection but failed to read path: %w", err)}
-			})
+		// 7. The activation is already under way, so there is nothing to
+		// connect here -- only the row to show and the refresh that replaces it
+		// with the real one.
+		batchCmds := []tea.Cmd{
+			func() tea.Msg { return optimisticMsg },
+			refreshCmd,
 		}
 		// BatchMsg, not Batch: this is returned as a Msg, and the runtime only
 		// dispatches BatchMsg. Returning a Cmd here silently drops it.
 		return tea.BatchMsg(batchCmds)
+	}
+}
+
+// specificObject is the access point to activate on, as
+// AddAndActivateConnection's third argument. "/" is NetworkManager's "no
+// preference", which is what a network reached from somewhere other than a
+// scan result has to fall back to.
+func specificObject(apPath string) dbus.ObjectPath {
+	if apPath == "" {
+		return dbus.ObjectPath("/")
+	}
+	return dbus.ObjectPath(apPath)
+}
+
+// eapProfileSettings builds the connection NetworkManager is asked to store for
+// a WPA-EAP network. Separated from the call so the shape of it can be tested:
+// every key here is a property with a declared D-Bus type, and getting one
+// wrong is rejected as a whole profile rather than as the field at fault.
+func eapProfileSettings(config map[string]string, ssid, eapMethod, identity, uuid string) map[string]map[string]dbus.Variant {
+	eapSettings := map[string]dbus.Variant{
+		"eap":      dbus.MakeVariant([]string{strings.ToLower(eapMethod)}),
+		"identity": dbus.MakeVariant(identity),
+		"password": dbus.MakeVariant(config["password"]),
+	}
+	if phase2, ok := config["phase2-auth"]; ok && phase2 != "" && phase2 != "NONE" {
+		eapSettings["phase2-auth"] = dbus.MakeVariant(strings.ToLower(phase2))
+	}
+	// ca-cert is a byte array, and in the path scheme it is "file://", the
+	// path, and a terminating NUL -- see nm-settings-dbus(5). Sent as a plain
+	// string it is the wrong D-Bus type for the property, and NetworkManager
+	// rejects the profile rather than the field, so naming a CA certificate
+	// was enough to stop an EAP network being saved at all.
+	//
+	// Left out when there is no path, which is not the same as setting it
+	// empty: unset means the server certificate is not checked, which
+	// NetworkManager documents as allowing a man in the middle. Empty is
+	// neither, and what it does has varied between versions.
+	if certPath := strings.TrimSpace(config["ca_cert"]); certPath != "" {
+		eapSettings["ca-cert"] = dbus.MakeVariant([]byte("file://" + certPath + "\x00"))
+	}
+
+	return map[string]map[string]dbus.Variant{
+		"connection": {
+			"id":          dbus.MakeVariant(ssid),
+			"uuid":        dbus.MakeVariant(uuid),
+			"type":        dbus.MakeVariant("802-11-wireless"),
+			"autoconnect": dbus.MakeVariant(true),
+		},
+		"802-11-wireless": {
+			"ssid":     dbus.MakeVariant([]byte(ssid)),
+			"mode":     dbus.MakeVariant("infrastructure"),
+			"security": dbus.MakeVariant("802-11-wireless-security"),
+		},
+		"802-11-wireless-security": {
+			"key-mgmt": dbus.MakeVariant("wpa-eap"),
+		},
+		"802-1x": eapSettings,
+		"ipv4":   {"method": dbus.MakeVariant("auto")},
+		"ipv6":   {"method": dbus.MakeVariant("auto")},
 	}
 }
 

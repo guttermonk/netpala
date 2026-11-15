@@ -69,6 +69,11 @@ type NetpalaData struct {
 	// refresh can rewrite VpnData while the prompt is up, and a stale index
 	// would delete whatever had moved into that row.
 	VpnTarget common.VpnConnection
+	// NetworkTarget is the same thing for a wireless profile. It used to be
+	// carried in SelectedNetwork, which meant packing a KnownNetwork into a
+	// ScannedNetwork and reading a connection path out of a field that
+	// describes an access point.
+	NetworkTarget common.KnownNetwork
 	// NMMacDefault is what NetworkManager's global wifi.cloned-mac-address
 	// resolves to, read once so the MAC picker can name what "Default" means.
 	NMMacDefault string
@@ -800,8 +805,9 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, dbus.DeleteConnectionCmd(m.Conn, target.Path)
 
 			default: // confirmDeleteNetwork
-				// NOTE: Ensure m.SelectedNetwork holds the correct data before entering state 1
-				return m, dbus.DeleteConnectionCmd(m.Conn, m.SelectedNetwork.Path)
+				target := m.NetworkTarget
+				m.NetworkTarget = common.KnownNetwork{}
+				return m, dbus.DeleteConnectionCmd(m.Conn, target.Path)
 			}
 
 		default: // If it's not a SubmitConfirmationMsg...
@@ -1085,6 +1091,7 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch m.SelectedNetwork.Security {
 				case "wpa2-eap":
 					m.Form.SSIDSelected = m.SelectedNetwork.SSID
+					m.Form.APSelected = string(m.SelectedNetwork.Path)
 					m.PopupState = 0
 
 					m.Overlay = updateOverlayModel(m, &m.Form)
@@ -1151,17 +1158,11 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.Config.KeyBindings.Remove.Matches(keyStr) {
 			if m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0 {
 				// Delete known network
-				m.SelectedNetwork = common.ScannedNetwork{
-					Path:     m.KnownNetworks[m.SelectedEntry].Path,
-					SSID:     m.KnownNetworks[m.SelectedEntry].SSID,
-					BSSID:    m.KnownNetworks[m.SelectedEntry].BSSID,
-					Security: m.KnownNetworks[m.SelectedEntry].Security,
-					Signal:   m.KnownNetworks[m.SelectedEntry].Signal,
-				}
+				m.NetworkTarget = m.KnownNetworks[m.SelectedEntry]
 				m.PopupState = 1
 				m.confirmAction = confirmDeleteNetwork
 				m.Confirmation = models.ModelConfirmation(m.Colors, m.Config.KeyBindings)
-				m.Confirmation.Message = fmt.Sprintf("Are you sure you want to delete the known network '%s'?\n", m.SelectedNetwork.SSID)
+				m.Confirmation.Message = fmt.Sprintf("Are you sure you want to delete the known network '%s'?\n", m.NetworkTarget.SSID)
 
 				m.Overlay = updateOverlayModel(m, &m.Confirmation)
 				return m, nil
