@@ -20,8 +20,8 @@ type TableData struct {
 	securityData    []common.SecurityService
 	knownNetworks   []common.KnownNetwork
 	scannedNetworks []common.ScannedNetwork
-	
-	colors          config.Colors
+
+	colors config.Colors
 }
 
 func TableModel(
@@ -50,7 +50,7 @@ func TableModel(
 		knownNetworks:   knownNets,
 		scannedNetworks: scannedNets,
 
-		colors:          colors,
+		colors: colors,
 	}
 }
 

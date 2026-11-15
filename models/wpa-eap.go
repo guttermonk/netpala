@@ -13,18 +13,18 @@ import (
 )
 
 type WpaEapForm struct {
-	EapMethod      	selector.Model
-	Phase2Auth     	selector.Model
-	Identity       	textinput.Model
-	Password       	textinput.Model
-	CaCert         	textinput.Model
-	focused        	int
-	
-	SSIDSelected		string
-	EapSelected   	bool
-	Phase2Selected	bool
-	DisableForm   	func()
-	Colors         	config.Colors
+	EapMethod  selector.Model
+	Phase2Auth selector.Model
+	Identity   textinput.Model
+	Password   textinput.Model
+	CaCert     textinput.Model
+	focused    int
+
+	SSIDSelected   string
+	EapSelected    bool
+	Phase2Selected bool
+	DisableForm    func()
+	Colors         config.Colors
 }
 
 type EAPMethod struct {
@@ -55,7 +55,7 @@ func ModelWpaEapForm(colors config.Colors) WpaEapForm {
 				EAPMethod{Type: "TLS"},
 				EAPMethod{Type: "PWD"},
 			},
-			PerPage: 4,
+			PerPage:    4,
 			HeaderFunc: emptyFunc,
 			FooterFunc: emptyFunc,
 		},
@@ -67,12 +67,12 @@ func ModelWpaEapForm(colors config.Colors) WpaEapForm {
 				EAPMethod{Type: "MSCHAP"},
 				EAPMethod{Type: "NONE"},
 			},
-			PerPage: 5,
+			PerPage:    5,
 			HeaderFunc: emptyFunc,
 			FooterFunc: emptyFunc,
 		},
 	}
-	
+
 	// Set the functions that need access to colors
 	m.EapMethod.SelectedFunc = makeSelectedFunc(colors)
 	m.EapMethod.UnSelectedFunc = makeUnselectedFunc(colors)
@@ -82,7 +82,7 @@ func ModelWpaEapForm(colors config.Colors) WpaEapForm {
 		"TLS",
 		"PWD",
 	}, colors)
-	
+
 	m.Phase2Auth.SelectedFunc = makeUnselectedFunc(colors)
 	m.Phase2Auth.UnSelectedFunc = makeUnselectedFunc(colors)
 	m.Phase2Auth.FinishedFunc = makeCompletedFunc([]string{
@@ -92,7 +92,7 @@ func ModelWpaEapForm(colors config.Colors) WpaEapForm {
 		"MSCHAP",
 		"NONE",
 	}, colors)
-	
+
 	return m
 }
 
@@ -217,14 +217,14 @@ func (m WpaEapForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case 5:
 			// Submit form
 			config := map[string]string{
-				"ssid":				 m.SSIDSelected,
+				"ssid":        m.SSIDSelected,
 				"eap":         m.EapMethod.Selected().(EAPMethod).Type,
 				"phase2-auth": m.Phase2Auth.Selected().(EAPMethod).Type,
 				"identity":    m.Identity.Value(),
 				"password":    m.Password.Value(),
 				"ca_cert":     m.CaCert.Value(),
 			}
-			
+
 			// Send the message with the data back to the parent
 			return m, func() tea.Msg {
 				return common.SubmitEapFormMsg{Config: config}

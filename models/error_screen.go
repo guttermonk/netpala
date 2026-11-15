@@ -45,7 +45,7 @@ func (m ModelErrorType) View() string {
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(m.Colors.Error)).
 		Foreground(lipgloss.Color(m.Colors.ErrorText)).
-		Width(size.Width-2).
+		Width(size.Width - 2).
 		Height(size.Height - 2)
 
 	return style.Render(m.Description)
