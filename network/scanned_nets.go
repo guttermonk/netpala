@@ -94,26 +94,30 @@ func getSecurityType(wpaFlags, rsnFlags uint32) string {
 		NM_802_11_AP_SEC_KEY_MGMT_EAP_SUITE_B_192 = 0x00002000
 	)
 
+	// The labels are common's, so that a network reads the same way whether it
+	// is being discovered here or has already been saved. An access point can
+	// advertise several of these at once, and all of them are listed: which one
+	// is used to join is common.MechanismFor's decision, not the column's.
 	var security []string
 	if rsnFlags&NM_802_11_AP_SEC_KEY_MGMT_SAE != 0 {
-		security = append(security, "wpa3-sae")
+		security = append(security, common.LabelSAE)
 	}
 	if rsnFlags&NM_802_11_AP_SEC_KEY_MGMT_EAP_SUITE_B_192 != 0 {
-		security = append(security, "wpa3-eap-192")
+		security = append(security, common.LabelEAP192)
 	}
 	if (rsnFlags&NM_802_11_AP_SEC_KEY_MGMT_802_1X != 0) || (wpaFlags&NM_802_11_AP_SEC_KEY_MGMT_802_1X != 0) {
-		security = append(security, "wpa2-eap")
+		security = append(security, common.LabelEAP)
 	}
 	if (rsnFlags&NM_802_11_AP_SEC_KEY_MGMT_PSK != 0) || (wpaFlags&NM_802_11_AP_SEC_KEY_MGMT_PSK != 0) {
-		security = append(security, "wpa2-psk")
+		security = append(security, common.LabelPSK)
 	}
 	if rsnFlags&(NM_802_11_AP_SEC_KEY_MGMT_OWE|NM_802_11_AP_SEC_KEY_MGMT_OWE_TM) != 0 {
-		security = append(security, "wpa-owe")
+		security = append(security, common.LabelOWE)
 	}
 	if len(security) == 0 {
-		return "open"
+		return common.LabelOpen
 	}
-	return strings.Join(security, " / ")
+	return strings.Join(security, common.LabelSeparator)
 }
 
 // removeDuplicates keeps the strongest access point for each SSID, which is

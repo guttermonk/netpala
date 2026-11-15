@@ -133,7 +133,7 @@ func AddAndConnectEAPCmd(conn *dbus.Conn, config map[string]string, devicePath d
 		// 6. Create the optimistic update message
 		optimisticMsg := common.OptimisticAddMsg{
 			SSID:     ssid,
-			Security: "wpa2-eap", // Generally correct assumption for EAP
+			Security: common.LabelEAP, // Generally correct assumption for EAP
 		}
 
 		// 7. The activation is already under way, so there is nothing to

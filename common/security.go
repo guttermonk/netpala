@@ -5,18 +5,39 @@ import (
 	"strings"
 )
 
-// SecurityMechanism is what a network's security says about joining it, as
-// opposed to what it says on screen.
+// The vocabulary of the Security column, and the only one.
 //
-// The two are not the same string, and treating them as one is what sent OWE
-// networks to the password prompt. A scan result's Security is built for the
-// Security column: it lists every key management the access point advertises,
-// joined with " / ", so a router in WPA2/WPA3 transition mode reads
-// "wpa3-sae / wpa2-psk". Saved profiles arrive with a vocabulary of their own,
-// derived from the one key-mgmt the profile holds, which spells OWE "owe"
-// where a scan spells it "wpa-owe". Matching either of those exactly, as both
-// call sites used to, works for the handful of strings that happen to be
-// written the same way round and silently mishandles the rest.
+// There are two places a network's security is worked out -- from the key
+// management an access point advertises, and from the one a saved profile
+// holds -- and they used to name the results separately. The spellings drifted
+// where you would expect them to: the same OWE network read "wpa-owe" as a
+// scan result and "owe" once saved, so the Security column said two different
+// things about it depending on which pane it was in, and the handler matching
+// one of those strings exactly did the wrong thing with the other.
+//
+// Naming them here rather than at each producer is what keeps that from
+// happening again. MechanismFor below is the other half: a scan lists every
+// mechanism an access point offers, so these also arrive joined together.
+const (
+	LabelOpen   = "open"
+	LabelOWE    = "wpa-owe"
+	LabelPSK    = "wpa2-psk"
+	LabelSAE    = "wpa3-sae"
+	LabelEAP    = "wpa2-eap"
+	LabelEAP192 = "wpa3-eap-192"
+	// WEP, and a saved profile whose key management is none of the above.
+	// Neither has a scan-result spelling: an access point offering nothing
+	// recognisable reads as open.
+	LabelWEP     = "wep"
+	LabelUnknown = "encrypted"
+	// LabelSeparator joins the mechanisms of an access point offering several.
+	LabelSeparator = " / "
+)
+
+// SecurityMechanism is what a network's security says about joining it, as
+// opposed to what it says on screen. The labels above are written for the
+// column; this is what the two decisions -- which popup opens, which key-mgmt
+// is stored -- are actually made on.
 type SecurityMechanism int
 
 // PSK is the zero value deliberately: it is the conservative answer for a
@@ -51,7 +72,7 @@ func (m SecurityMechanism) NeedsPassword() bool {
 	return m == SecurityPSK || m == SecuritySAE
 }
 
-// MechanismFor classifies a Security string from either producer.
+// MechanismFor classifies a Security label, or several of them joined.
 //
 // The order of the cases is the answer to an access point offering more than
 // one mechanism:
@@ -80,17 +101,18 @@ func MechanismFor(security string) SecurityMechanism {
 	}
 
 	switch {
-	case has("wpa2-eap", "wpa3-eap-192"):
+	case has(LabelEAP, LabelEAP192):
 		return SecurityEAP
-	case has("wpa2-psk"):
+	case has(LabelPSK):
 		return SecurityPSK
-	case has("wpa3-sae"):
+	case has(LabelSAE):
 		return SecuritySAE
-	case has("owe", "wpa-owe"):
+	case has(LabelOWE):
 		return SecurityOWE
-	case has("open"):
+	case has(LabelOpen):
 		return SecurityOpen
 	}
-	// Unrecognised, which includes a saved profile's "wep" and "encrypted".
+	// Unrecognised, which includes LabelWEP and LabelUnknown: both are keyed
+	// with something, and asking which key is the only way to find out.
 	return SecurityPSK
 }
