@@ -13,11 +13,19 @@ type PasswordInput struct {
 	Message      string
 	Password     textinput.Model
 	ConfirmValue bool
+	// showPassword unmasks the field, for when the only way to tell whether a
+	// long pre-shared key was typed correctly is to look at it.
+	showPassword bool
 	Colors       config.Colors
 }
 
 func ModelPasswordInput(colors config.Colors) PasswordInput {
 	Input := newTextInput(colors, "Enter Password...", 31, 64)
+	// Masked, like the EAP form's password field. This popup was the one input
+	// in netpala that echoed a key in the clear, which is the wrong default for
+	// something people open in front of other people.
+	Input.EchoMode = textinput.EchoPassword
+	Input.EchoCharacter = '*'
 
 	return PasswordInput{
 		Password:     Input,
@@ -41,6 +49,15 @@ func (m PasswordInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ConfirmValue = !m.ConfirmValue
 		case "esc", "ctrl+c":
 			cmds = append(cmds, func() tea.Msg { return common.ExitFormMsg{} })
+		case "ctrl+p":
+			m.showPassword = !m.showPassword
+			if m.showPassword {
+				m.Password.EchoMode = textinput.EchoNormal
+			} else {
+				m.Password.EchoMode = textinput.EchoPassword
+			}
+			// Returning here keeps the key out of the field below.
+			return m, nil
 		case "enter":
 			if m.ConfirmValue {
 				cmds = append(cmds, func() tea.Msg { return common.SubmitPasswordMsg{Value: m.Password.Value()} })
@@ -88,10 +105,17 @@ func (m PasswordInput) View() string {
 		cancelButton = inactiveBorderStyle.Render("Cancel")
 	}
 
+	hint := "^P show"
+	if m.showPassword {
+		hint = "^P hide"
+	}
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.Colors.Placeholder))
+
 	return containerStyle.Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			m.Message,
 			activeBorderStyle.Width(38).BorderForeground(lipgloss.Color(m.Colors.Active)).Render(m.Password.View()),
+			hintStyle.Render(hint),
 			lipgloss.JoinHorizontal(lipgloss.Center,
 				cancelButton, confirmButton,
 			),
