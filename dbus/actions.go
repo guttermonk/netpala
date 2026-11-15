@@ -161,30 +161,40 @@ func wirelessProfileSettings(net common.ScannedNetwork, password, uuid string) m
 			"autoconnect": dbus.MakeVariant(true),
 		},
 		"802-11-wireless": {
-			"ssid":     dbus.MakeVariant([]byte(net.SSID)),
-			"mode":     dbus.MakeVariant("infrastructure"),
-			"security": dbus.MakeVariant("802-11-wireless-security"),
+			"ssid": dbus.MakeVariant([]byte(net.SSID)),
+			"mode": dbus.MakeVariant("infrastructure"),
 		},
 		"ipv4": {"method": dbus.MakeVariant("auto")},
 		"ipv6": {"method": dbus.MakeVariant("auto")},
 	}
 
 	securitySettings := make(map[string]dbus.Variant)
-	switch net.Security {
-	case "wpa3-sae":
+	switch common.MechanismFor(net.Security) {
+	case common.SecurityOpen:
+		// No security section at all. One holding only a key-mgmt of "none"
+		// is a different thing: that is WEP.
+	case common.SecurityOWE:
+		// Encrypted without a shared secret, so key management and no key.
+		// This is the case that used to be missed: the string a scan produces
+		// for it was matched against the one a saved profile would have, so an
+		// OWE network asked for a password and was then stored as WPA2-PSK,
+		// which cannot associate with it.
+		securitySettings["key-mgmt"] = dbus.MakeVariant("owe")
+	case common.SecuritySAE:
 		securitySettings["key-mgmt"] = dbus.MakeVariant("sae")
 		securitySettings["psk"] = dbus.MakeVariant(password)
-	case "wpa2-psk":
+	default:
+		// PSK, and anything MechanismFor did not recognise. Enterprise does
+		// not arrive here -- it has eapProfileSettings and a form of its own.
 		securitySettings["key-mgmt"] = dbus.MakeVariant("wpa-psk")
 		securitySettings["psk"] = dbus.MakeVariant(password)
-	default:
-		if net.Security != "open" {
-			securitySettings["key-mgmt"] = dbus.MakeVariant("wpa-psk")
-			securitySettings["psk"] = dbus.MakeVariant(password)
-		}
 	}
 	if len(securitySettings) > 0 {
 		settings["802-11-wireless-security"] = securitySettings
+		// Deprecated and without effect, per nm-settings-dbus(5), but it is
+		// only meant to be set when there is a section for it to name -- which
+		// an open profile has not.
+		settings["802-11-wireless"]["security"] = dbus.MakeVariant("802-11-wireless-security")
 	}
 
 	return settings

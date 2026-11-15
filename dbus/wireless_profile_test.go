@@ -57,6 +57,49 @@ func TestPskAndSaeGetTheirOwnKeyManagement(t *testing.T) {
 	}
 }
 
+// OWE is encrypted without a shared secret, so it needs the key management and
+// no key. It used to get neither: the string a scan makes for it reached the
+// password prompt, and the profile was then stored as WPA2-PSK with whatever
+// had been typed, which cannot associate with an OWE access point.
+func TestOweIsKeyedWithoutAPassword(t *testing.T) {
+	sec, ok := securitySection(t, "wpa-owe", "")
+	if !ok {
+		t.Fatal("no security section; an OWE profile needs key-mgmt")
+	}
+	if got, _ := sec["key-mgmt"].Value().(string); got != "owe" {
+		t.Errorf("key-mgmt = %q, want owe", got)
+	}
+	if _, present := sec["psk"]; present {
+		t.Error("a psk was stored for a network that has none")
+	}
+}
+
+// A transition-mode access point offers both, and wpa-psk is the one
+// nm-settings-dbus(5) documents as covering WPA2 and WPA3 personal.
+func TestTransitionModeIsKeyedAsPsk(t *testing.T) {
+	sec, ok := securitySection(t, "wpa3-sae / wpa2-psk", "a good password")
+	if !ok {
+		t.Fatal("no security section")
+	}
+	if got, _ := sec["key-mgmt"].Value().(string); got != "wpa-psk" {
+		t.Errorf("key-mgmt = %q, want wpa-psk", got)
+	}
+}
+
+// The deprecated pointer in the wireless section is only meant to name a
+// section that exists.
+func TestOnlyASecuredProfileNamesItsSecuritySection(t *testing.T) {
+	secured := wirelessProfileSettings(scanResult("home", "wpa2-psk"), "pw", "uuid")
+	if _, ok := secured["802-11-wireless"]["security"]; !ok {
+		t.Error("a secured profile does not name its security section")
+	}
+
+	open := wirelessProfileSettings(scanResult("cafe", "open"), "", "uuid")
+	if _, ok := open["802-11-wireless"]["security"]; ok {
+		t.Error("an open profile names a security section it does not have")
+	}
+}
+
 // The SSID is a byte array here too -- it is the same property as in an EAP
 // profile, and NetworkManager rejects the profile rather than the field.
 func TestTheWirelessProfileUsesTheDeclaredDBusTypes(t *testing.T) {

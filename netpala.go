@@ -1115,24 +1115,21 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Store the selected network before entering typing mode
 				m.SelectedNetwork = m.ScannedNetworks[m.SelectedEntry]
 
-				switch m.SelectedNetwork.Security {
-				case "wpa2-eap":
+				switch common.MechanismFor(m.SelectedNetwork.Security) {
+				case common.SecurityEAP:
 					m.Form.SSIDSelected = m.SelectedNetwork.SSID
 					m.Form.APSelected = string(m.SelectedNetwork.Path)
 					m.PopupState = 0
 
 					m.Overlay = updateOverlayModel(m, &m.Form)
 					return m, nil
-				case "open":
-					// Open network, connect directly
-					wifiDevice := m.DeviceData[0]
-					return m, dbus.AddAndConnectToNetworkCmd(m.Conn, m.SelectedNetwork, "", wifiDevice.Path)
-				case "owe":
-					// Opportunistically encrypted network, connect directly
+				case common.SecurityOpen, common.SecurityOWE:
+					// Nothing to ask for: an open network has no key, and OWE
+					// derives one per association without a shared secret.
 					wifiDevice := m.DeviceData[0]
 					return m, dbus.AddAndConnectToNetworkCmd(m.Conn, m.SelectedNetwork, "", wifiDevice.Path)
 				default:
-					// Most common case: prompt for password
+					// PSK or SAE, which is most of them.
 					m.PopupState = 2
 					m.PasswordForm.Password.Focus()
 
