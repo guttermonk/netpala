@@ -216,29 +216,7 @@ func specificObject(apPath string) dbus.ObjectPath {
 // every key here is a property with a declared D-Bus type, and getting one
 // wrong is rejected as a whole profile rather than as the field at fault.
 func eapProfileSettings(config map[string]string, ssid, eapMethod, identity, uuid string) map[string]map[string]dbus.Variant {
-	eapSettings := map[string]dbus.Variant{
-		"eap":      dbus.MakeVariant([]string{strings.ToLower(eapMethod)}),
-		"identity": dbus.MakeVariant(identity),
-		"password": dbus.MakeVariant(config["password"]),
-	}
-	if phase2, ok := config["phase2-auth"]; ok && phase2 != "" && phase2 != "NONE" {
-		eapSettings["phase2-auth"] = dbus.MakeVariant(strings.ToLower(phase2))
-	}
-	// ca-cert is a byte array, and in the path scheme it is "file://", the
-	// path, and a terminating NUL -- see nm-settings-dbus(5). Sent as a plain
-	// string it is the wrong D-Bus type for the property, and NetworkManager
-	// rejects the profile rather than the field, so naming a CA certificate
-	// was enough to stop an EAP network being saved at all.
-	//
-	// Left out when there is no path, which is not the same as setting it
-	// empty: unset means the server certificate is not checked, which
-	// NetworkManager documents as allowing a man in the middle. Empty is
-	// neither, and what it does has varied between versions.
-	if certPath := strings.TrimSpace(config["ca_cert"]); certPath != "" {
-		eapSettings["ca-cert"] = dbus.MakeVariant([]byte("file://" + certPath + "\x00"))
-	}
-
-	return map[string]map[string]dbus.Variant{
+	settings := map[string]map[string]dbus.Variant{
 		"connection": {
 			"id":          dbus.MakeVariant(ssid),
 			"uuid":        dbus.MakeVariant(uuid),
@@ -253,10 +231,76 @@ func eapProfileSettings(config map[string]string, ssid, eapMethod, identity, uui
 		"802-11-wireless-security": {
 			"key-mgmt": dbus.MakeVariant("wpa-eap"),
 		},
-		"802-1x": eapSettings,
-		"ipv4":   {"method": dbus.MakeVariant("auto")},
-		"ipv6":   {"method": dbus.MakeVariant("auto")},
+		// The method and identity the caller validated, rather than the raw
+		// form values: a profile without them cannot authenticate, so the
+		// command refuses before reaching here.
+		"802-1x": {
+			"eap":      dbus.MakeVariant([]string{strings.ToLower(eapMethod)}),
+			"identity": dbus.MakeVariant(identity),
+		},
+		"ipv4": {"method": dbus.MakeVariant("auto")},
+		"ipv6": {"method": dbus.MakeVariant("auto")},
 	}
+
+	applyEapToSettings(settings, config)
+	applyEapPasswordToSettings(settings, config["password"])
+
+	return settings
+}
+
+// eap1xSection is a profile's 802-1x settings, created if the profile has none.
+func eap1xSection(settings map[string]map[string]dbus.Variant) map[string]dbus.Variant {
+	if settings["802-1x"] == nil {
+		settings["802-1x"] = map[string]dbus.Variant{}
+	}
+	return settings["802-1x"]
+}
+
+// applyEapToSettings writes the parts of an 802-1x section that a form carries
+// and a profile can do without: the inner method and the CA certificate.
+//
+// Both are removed when the form leaves them empty rather than written empty,
+// which is the difference between a profile that does not use one and a
+// profile that uses an unnameable one. Shared by adding and editing, so the
+// encoding below is described once.
+func applyEapToSettings(settings map[string]map[string]dbus.Variant, config map[string]string) {
+	sec := eap1xSection(settings)
+
+	// NONE is the form's way of saying there is no inner method.
+	if phase2 := config["phase2-auth"]; phase2 != "" && strings.ToUpper(phase2) != "NONE" {
+		sec["phase2-auth"] = dbus.MakeVariant(strings.ToLower(phase2))
+	} else {
+		delete(sec, "phase2-auth")
+	}
+
+	// ca-cert is a byte array, and in the path scheme it is "file://", the
+	// path, and a terminating NUL -- see nm-settings-dbus(5). Sent as a plain
+	// string it is the wrong D-Bus type for the property, and NetworkManager
+	// rejects the profile rather than the field, so naming a CA certificate
+	// was enough to stop an EAP network being saved at all.
+	//
+	// Left out when there is no path, which is not the same as setting it
+	// empty: unset means the server certificate is not checked, which
+	// NetworkManager documents as allowing a man in the middle. Empty is
+	// neither, and what it does has varied between versions.
+	if certPath := strings.TrimSpace(config["ca_cert"]); certPath != "" {
+		sec["ca-cert"] = dbus.MakeVariant([]byte("file://" + certPath + "\x00"))
+	} else {
+		delete(sec, "ca-cert")
+	}
+}
+
+// applyEapPasswordToSettings stores an EAP password, and says who owns it.
+//
+// password-flags 0 is NM_SETTING_SECRET_FLAG_NONE: the secret is
+// system-owned, stored by NetworkManager, and handed back to a caller polkit
+// allows. It is the default for a property that has never been set, but not
+// for one being changed -- a profile whose flags say the secret is held by an
+// agent keeps saying so, and the password written here would never be used.
+func applyEapPasswordToSettings(settings map[string]map[string]dbus.Variant, password string) {
+	sec := eap1xSection(settings)
+	sec["password"] = dbus.MakeVariant(password)
+	sec["password-flags"] = dbus.MakeVariant(uint32(0))
 }
 
 // ToggleVpnCmd activates or deactivates a VPN connection.

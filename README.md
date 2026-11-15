@@ -251,6 +251,7 @@ windowrule = float 1, match:title com.omarchy.netpala
 
 - Space / Enter : Connect / Disconnect
 - Delete / Backspace : Remove network
+- e : Edit the saved credentials
 - a : Toggle auto-connect
 - h : Toggle hidden
 - d : Switch DNS provider
@@ -287,6 +288,7 @@ Everything else is in `?`, listed for the section the cursor is in:
 │   Known Networks                                             │
 │     ⤶/␣         Dis/Connect                                  │
 │     ⌫/⌦         Remove                                       │
+│     e           Edit                                         │
 │     a           Auto                                         │
 │     h           Hidden                                       │
 │     d           DNS                                          │
@@ -699,6 +701,57 @@ so a non-default listener is still recognised.
 
 ---
 
+### Editing a saved network
+
+Pressing `e` on a known network changes the credentials it was saved with. It
+is the one thing that previously needed the network to be deleted and joined
+again -- which also threw away its DNS provider, its MAC mode and its
+auto-connect setting, none of which had anything to do with a mistyped key.
+
+What the popup asks for depends on what the network uses. A WPA2 or WPA3
+personal network has one field:
+
+```
+┌──────────────────────────────────────────────────┐
+│ mynetwork                                        │
+│ ┌──────────────────────────────────────────────┐ │
+│ │ ************                                 │ │
+│ └──────────────────────────────────────────────┘ │
+│ ^P show                                          │
+│ blank leaves the current one                     │
+│       ┌────────────┐      ┏━━━━━━━━━━━━┓         │
+│       │   Cancel   │      ┃    Save    ┃         │
+│       └────────────┘      ┗━━━━━━━━━━━━┛         │
+└──────────────────────────────────────────────────┘
+```
+
+**A blank field means "leave it alone"**, which is why the popup says so. The
+field cannot be pre-filled with the stored key -- NetworkManager hands secrets
+only to a caller `polkit` allows -- so an empty box would otherwise read as
+"this network has no password", and saving it would store an empty one.
+
+An enterprise network opens the same form used to join one, on what the
+profile actually holds: identity, password, CA certificate, EAP method and
+phase 2. The two selectors start on the profile's own values rather than at the
+top of their lists, so saving without touching them changes nothing. The
+password behaves as above, blank included.
+
+> **The other settings are keys, not fields.** Auto-connect, hidden, DNS and
+> MAC are `a`, `h`, `d` and `m`, and they apply the moment you press them.
+> They are deliberately not repeated here: two ways to set one thing is one
+> too many, and a form that quietly rewrites a setting you came to this popup
+> for an unrelated reason is worse than no form.
+
+Saving writes the profile. If it is the network you are on, netpala
+re-activates it so the new key is used now rather than at the next connect --
+the same thing the DNS and MAC switchers do, and for the same reason:
+NetworkManager keeps a running connection on the settings it started with.
+
+An open or OWE network has no key to change and says so. WEP is refused, as it
+is when joining one.
+
+---
+
 ### MAC Address Switcher
 
 Pressing `m` on a known network chooses what hardware address the interface
@@ -1005,6 +1058,10 @@ help = "DNS"
 [keybindings.set_mac]
 keys = ["m"]
 help = "MAC"
+
+[keybindings.edit]
+keys = ["e"]
+help = "Edit"
 
 [keybindings.import_vpn]
 keys = ["i"]

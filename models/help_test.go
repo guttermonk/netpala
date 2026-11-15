@@ -69,7 +69,7 @@ func inBindings(bindings []key.Binding, desc string) bool {
 // to be there.
 func TestHelpListsThePanesOwnActions(t *testing.T) {
 	for pane, want := range map[int][]string{
-		common.PaneKnown: {"Dis/Connect", "Remove", "Auto", "Hidden", "DNS", "MAC"},
+		common.PaneKnown: {"Dis/Connect", "Remove", "Edit", "Auto", "Hidden", "DNS", "MAC"},
 		common.PaneVPN:   {"Dis/Connect", "Remove", "Auto", "DNS"},
 	} {
 		view := stripANSI(helpPopup(pane).View())
@@ -85,14 +85,14 @@ func TestHelpListsThePanesOwnActions(t *testing.T) {
 // mentioned: the popup is meant to answer what this row accepts.
 func TestHelpOmitsActionsThatDoNothingHere(t *testing.T) {
 	vpn := stripANSI(helpPopup(common.PaneVPN).View())
-	for _, desc := range []string{"Hidden", "MAC"} {
+	for _, desc := range []string{"Hidden", "MAC", "Edit"} {
 		if strings.Contains(vpn, desc) {
 			t.Errorf("VPN help lists %q, a wireless-profile setting:\n%s", desc, vpn)
 		}
 	}
 
 	security := stripANSI(helpPopup(common.PaneSecurity).View())
-	for _, desc := range []string{"Remove", "Auto", "DNS", "MAC", "Hidden"} {
+	for _, desc := range []string{"Remove", "Auto", "DNS", "MAC", "Hidden", "Edit"} {
 		if strings.Contains(security, desc) {
 			t.Errorf("Security help lists %q, which does nothing there:\n%s", desc, security)
 		}

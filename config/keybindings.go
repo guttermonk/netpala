@@ -32,6 +32,7 @@ type KeyBindings struct {
 	ToggleHidden      KeyBinding `toml:"toggle_hidden"`
 	SetDns            KeyBinding `toml:"set_dns"`
 	SetMac            KeyBinding `toml:"set_mac"`
+	Edit              KeyBinding `toml:"edit"`
 	ImportVpn         KeyBinding `toml:"import_vpn"`
 	Help              KeyBinding `toml:"help"`
 
@@ -218,6 +219,10 @@ func DefaultKeyBindings() KeyBindings {
 		SetMac: KeyBinding{
 			Keys: []string{"m"},
 			Help: "MAC",
+		},
+		Edit: KeyBinding{
+			Keys: []string{"e"},
+			Help: "Edit",
 		},
 		ImportVpn: KeyBinding{
 			Keys: []string{"i"},
@@ -470,6 +475,9 @@ func mergeWithDefaults(cfg Config) Config {
 	if len(cfg.KeyBindings.SetMac.Keys) == 0 {
 		cfg.KeyBindings.SetMac = defaults.SetMac
 	}
+	if len(cfg.KeyBindings.Edit.Keys) == 0 {
+		cfg.KeyBindings.Edit = defaults.Edit
+	}
 	if len(cfg.KeyBindings.ImportVpn.Keys) == 0 {
 		cfg.KeyBindings.ImportVpn = defaults.ImportVpn
 	}
@@ -516,6 +524,9 @@ func mergeWithDefaults(cfg Config) Config {
 	}
 	if cfg.KeyBindings.SetMac.Help == "" {
 		cfg.KeyBindings.SetMac.Help = defaults.SetMac.Help
+	}
+	if cfg.KeyBindings.Edit.Help == "" {
+		cfg.KeyBindings.Edit.Help = defaults.Edit.Help
 	}
 	if cfg.KeyBindings.ImportVpn.Help == "" {
 		cfg.KeyBindings.ImportVpn.Help = defaults.ImportVpn.Help
@@ -649,6 +660,7 @@ type AppKeyMap struct {
 	ToggleHidden      key.Binding
 	SetDns            key.Binding
 	SetMac            key.Binding
+	Edit              key.Binding
 	ImportVpn         key.Binding
 	Help              key.Binding
 	Quit              key.Binding
@@ -669,6 +681,7 @@ func NewAppKeyMap(cfg *Config) AppKeyMap {
 		ToggleHidden:      cfg.KeyBindings.ToggleHidden.ToKeyBinding(),
 		SetDns:            cfg.KeyBindings.SetDns.ToKeyBinding(),
 		SetMac:            cfg.KeyBindings.SetMac.ToKeyBinding(),
+		Edit:              cfg.KeyBindings.Edit.ToKeyBinding(),
 		ImportVpn:         cfg.KeyBindings.ImportVpn.ToKeyBinding(),
 		Help:              cfg.KeyBindings.Help.ToKeyBinding(),
 		Quit:              cfg.KeyBindings.Quit.ToKeyBinding(),
@@ -720,7 +733,7 @@ func (k AppKeyMap) PaneActions(pane int) []key.Binding {
 	switch pane {
 	case common.PaneKnown:
 		return []key.Binding{
-			k.Remove, k.ToggleAutoConnect, k.ToggleHidden, k.SetDns, k.SetMac,
+			k.Remove, k.Edit, k.ToggleAutoConnect, k.ToggleHidden, k.SetDns, k.SetMac,
 		}
 	case common.PaneVPN:
 		return []key.Binding{k.Remove, k.ToggleAutoConnect, k.SetDns}

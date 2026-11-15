@@ -74,6 +74,11 @@ type NetpalaData struct {
 	// ScannedNetwork and reading a connection path out of a field that
 	// describes an access point.
 	NetworkTarget common.KnownNetwork
+	// EditTarget is the profile whose credentials are being changed. Held for
+	// the same reason as the others, and for one more: the EAP form opens on
+	// what the profile holds, which has to be read off the bus first, so the
+	// row can have moved by the time the form is ready to show.
+	EditTarget common.KnownNetwork
 	// NMMacDefault is what NetworkManager's global wifi.cloned-mac-address
 	// resolves to, read once so the MAC picker can name what "Default" means.
 	NMMacDefault string
@@ -409,10 +414,7 @@ func (m NetpalaData) setConnectedDNSCmd() tea.Cmd {
 
 	provider := common.DNSProviderByIDFor(common.DNSModeDNSCrypt, m.Config.DNS.DnscryptAddresses)
 
-	devicePath := godbus.ObjectPath("/")
-	if len(m.DeviceData) > 0 {
-		devicePath = m.DeviceData[0].Path
-	}
+	devicePath := m.wifiDevicePath()
 	return dbus.SetDnsCmd(m.Conn, target.Path, devicePath, provider, provider.V4, provider.V6, true)
 }
 
@@ -567,6 +569,52 @@ func (m *NetpalaData) keepCursorOn(ssid string) {
 			return
 		}
 	}
+}
+
+// freshEapForm builds the EAP form sized for the terminal it is about to be
+// drawn in.
+//
+// A new one each time it is opened, rather than the one built at startup being
+// filled in again: a form that has been used holds what was typed into it, and
+// the two uses now carry different things -- a profile's stored identity has no
+// business appearing in the form for joining some other network. The window
+// size has to be handed over by hand, since the message that would have
+// carried it arrived before this form existed.
+//
+// The command it returns is the form's own: the size message is what starts
+// the cursor blinking, and dropping it leaves a field that looks dead until
+// the first keypress.
+func (m NetpalaData) freshEapForm() (models.WpaEapForm, tea.Cmd) {
+	form := models.ModelWpaEapForm(m.Colors)
+	sized, cmd := form.Update(tea.WindowSizeMsg{Width: m.Width, Height: m.Height})
+	return sized.(models.WpaEapForm), cmd
+}
+
+// wifiDevicePath is the device a profile would be re-activated on, or "/" --
+// NetworkManager's "no particular device" -- when there is none.
+//
+// Every writer that re-activates needs it, and the credential editors were
+// about to be the third and fourth place to spell it out. The DNS and MAC
+// pickers fold their own Connected check into the same lines and are left as
+// they are; the flag they pass alongside already decides whether the path is
+// used at all.
+func (m NetpalaData) wifiDevicePath() godbus.ObjectPath {
+	if len(m.DeviceData) > 0 {
+		return m.DeviceData[0].Path
+	}
+	return godbus.ObjectPath("/")
+}
+
+// openSecretEdit puts the password popup in front of a saved profile.
+func (m *NetpalaData) openSecretEdit(target common.KnownNetwork) {
+	m.EditTarget = target
+	m.PasswordForm = models.ModelPasswordInput(m.Colors)
+	m.PasswordForm.SSID = target.SSID
+	m.PasswordForm.Target = target
+	m.PasswordForm.Password.Focus()
+
+	m.PopupState = 2
+	m.Overlay = updateOverlayModel(*m, &m.PasswordForm)
 }
 
 // clampSelection keeps the cursor inside the pane after a refresh shrinks it,
@@ -732,24 +780,31 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle the EAP form popup state
 		switch msg := msg.(type) {
 		case common.ExitFormMsg:
+			// Backing out of an edit lets go of what was being edited, so a
+			// late answer from the bus cannot reopen the form behind it.
+			m.EditTarget = common.KnownNetwork{}
 			m.PopupState = -1
-			m.Form = models.ModelWpaEapForm(m.Colors)
+			// The command a fresh form returns starts its cursor blinking, and
+			// this one is not on screen: it is the one the next open will find.
+			m.Form, _ = m.freshEapForm()
+			return m, nil
+		case common.SubmitEapEditMsg:
+			target := m.EditTarget
+			m.EditTarget = common.KnownNetwork{}
+			m.PopupState = -1
+			m.Form, _ = m.freshEapForm()
 
-			var formCmd tea.Cmd
-			var newForm tea.Model
-			newForm, formCmd = m.Form.Update(tea.WindowSizeMsg{Width: m.Width, Height: m.Height})
-			m.Form = newForm.(models.WpaEapForm)
-			return m, formCmd
+			if msg.Path != target.Path {
+				return m, nil
+			}
+			return m, dbus.UpdateEapCmd(m.Conn, target.Path, m.wifiDevicePath(),
+				msg.Config, target.Connected)
+
 		case common.SubmitEapFormMsg:
 			m.SelectedEntry = 0
 			m.PopupState = -1
-			m.Form = models.ModelWpaEapForm(m.Colors)
-
-			// Re-initialize the new form with the window size
 			var formCmd tea.Cmd
-			var newForm tea.Model
-			newForm, formCmd = m.Form.Update(tea.WindowSizeMsg{Width: m.Width, Height: m.Height})
-			m.Form = newForm.(models.WpaEapForm)
+			m.Form, formCmd = m.freshEapForm()
 
 			// Get the Wi-Fi device to connect with
 			if len(m.DeviceData) == 0 {
@@ -849,14 +904,29 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle the password popup state
 		switch msg := msg.(type) {
 		case common.ExitFormMsg:
+			// The password popup, so that is what is reset: it carries the
+			// profile being edited, and one left behind would put the next
+			// connect prompt in edit mode.
+			m.EditTarget = common.KnownNetwork{}
 			m.PopupState = -1
-			m.Form = models.ModelWpaEapForm(m.Colors)
+			m.PasswordForm = models.ModelPasswordInput(m.Colors)
+			return m, nil
+		case common.SubmitSecretEditMsg:
+			// The profile the popup was opened on, not the row under the
+			// cursor: a refresh can have moved the list while it was up.
+			target := m.EditTarget
+			m.EditTarget = common.KnownNetwork{}
+			m.PopupState = -1
+			m.PasswordForm = models.ModelPasswordInput(m.Colors)
 
-			var formCmd tea.Cmd
-			var newForm tea.Model
-			newForm, formCmd = m.Form.Update(tea.WindowSizeMsg{Width: m.Width, Height: m.Height})
-			m.Form = newForm.(models.WpaEapForm)
-			return m, formCmd
+			if msg.Path != target.Path {
+				// Not the profile this popup belongs to. Nothing is written
+				// rather than guessing which of the two was meant.
+				return m, nil
+			}
+			return m, dbus.UpdateSecretCmd(m.Conn, target.Path, m.wifiDevicePath(),
+				msg.Value, target.Connected)
+
 		case common.SubmitPasswordMsg:
 			m.PopupState = -1                                    // Exit popup
 			m.PasswordForm = models.ModelPasswordInput(m.Colors) // Reset
@@ -1117,12 +1187,14 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				switch common.MechanismFor(m.SelectedNetwork.Security) {
 				case common.SecurityEAP:
+					var formCmd tea.Cmd
+					m.Form, formCmd = m.freshEapForm()
 					m.Form.SSIDSelected = m.SelectedNetwork.SSID
 					m.Form.APSelected = string(m.SelectedNetwork.Path)
 					m.PopupState = 0
 
 					m.Overlay = updateOverlayModel(m, &m.Form)
-					return m, nil
+					return m, formCmd
 				case common.SecurityOpen, common.SecurityOWE:
 					// Nothing to ask for: an open network has no key, and OWE
 					// derives one per association without a shared secret.
@@ -1287,6 +1359,32 @@ func (m NetpalaData) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// MAC address switcher (only for known networks)
+		// Edit the credentials of a saved profile
+		if m.Config.KeyBindings.Edit.Matches(keyStr) {
+			if m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0 {
+				target := m.KnownNetworks[m.SelectedEntry]
+
+				switch common.MechanismFor(target.Security) {
+				case common.SecurityEAP:
+					// The form opens on what the profile holds, and that is a
+					// read off the bus, so the popup waits for the answer.
+					m.EditTarget = target
+					return m, dbus.LoadEapProfileCmd(m.Conn, target.Path, target.SSID)
+				case common.SecurityOpen, common.SecurityOWE:
+					return m, m.Alert.NewAlertCmd(bubbleup.InfoKey,
+						target.SSID+" has no password to change.")
+				case common.SecurityWEP:
+					// Consistent with joining one: netpala does not write WEP
+					// keys, so it does not offer to change them either.
+					return m, m.Alert.NewAlertCmd(bubbleup.WarnKey,
+						"WEP is not supported. Use nmcli to change this key.")
+				default:
+					m.openSecretEdit(target)
+					return m, nil
+				}
+			}
+		}
+
 		if m.Config.KeyBindings.SetMac.Matches(keyStr) {
 			if m.selectedBox == common.PaneKnown && len(m.KnownNetworks) > 0 {
 				m.MacTarget = m.KnownNetworks[m.SelectedEntry]
@@ -1412,6 +1510,28 @@ func (m NetpalaData) applyDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
 	case common.DeviceUpdateMsg:
 		m.DeviceData = msg
 		return m, nil, true
+
+	case common.EapProfileMsg:
+		// The answer to the read that pressing edit started. Dispatched here
+		// rather than in a popup state because when it was asked for there was
+		// no popup, and this is what opens one.
+		if m.EditTarget.Path == "" || msg.Path != m.EditTarget.Path {
+			// The target was cleared or changed while the bus was answering,
+			// so this is the answer to a question nobody is waiting for.
+			return m, nil, true
+		}
+		if m.PopupState != -1 {
+			// Something else got there first. Dropping the read is better than
+			// taking the screen off whatever is now in front of it.
+			m.EditTarget = common.KnownNetwork{}
+			return m, nil, true
+		}
+		var formCmd tea.Cmd
+		m.Form, formCmd = m.freshEapForm()
+		m.Form.LoadProfile(m.EditTarget, msg)
+		m.PopupState = 0
+		m.Overlay = updateOverlayModel(m, &m.Form)
+		return m, formCmd, true
 
 	case common.ScanningStateMsg:
 		// The flag, on the device that reported it, in place: reading the list

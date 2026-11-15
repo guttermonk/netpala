@@ -75,6 +75,36 @@ type SubmitPasswordMsg struct {
 	Value string
 }
 
+// SubmitSecretEditMsg is the password popup answering for a saved profile
+// rather than for a network being joined. An empty value means the stored key
+// is to be left alone, which is what the popup says it means.
+type SubmitSecretEditMsg struct {
+	Path  dbus.ObjectPath
+	Value string
+}
+
+// SubmitEapEditMsg is the EAP form answering for a saved profile.
+type SubmitEapEditMsg struct {
+	Path   dbus.ObjectPath
+	Config map[string]string
+}
+
+// EapProfileMsg is a saved EAP profile read back off the bus, so the form can
+// open on what the profile actually holds rather than on empty fields.
+//
+// Password is empty when the secret could not be read, which is not an error:
+// NetworkManager only hands secrets to a caller polkit allows, and an empty
+// field already means "leave it alone".
+type EapProfileMsg struct {
+	Path       dbus.ObjectPath
+	SSID       string
+	EapMethod  string // upper case, as the form lists them
+	Phase2Auth string
+	Identity   string
+	Password   string
+	CaCert     string
+}
+
 // DnsProbeMsg carries the result of a background resolver liveness check.
 type DnsProbeMsg struct {
 	Addrs []string

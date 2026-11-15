@@ -24,12 +24,20 @@ type WpaEapForm struct {
 	// APSelected is the access point the SSID was chosen from, passed through
 	// to NetworkManager so it activates on that one rather than whichever it
 	// would otherwise pick out of the ones sharing the name.
-	APSelected     string
+	APSelected string
+	// Target is the saved profile being edited, and empty when the form is
+	// being used to join a network that has just been found. The fields are
+	// the same either way -- a profile holds what the form asks for -- so the
+	// form is the same form, and this says which question it is answering.
+	Target         common.KnownNetwork
 	EapSelected    bool
 	Phase2Selected bool
 	DisableForm    func()
 	Colors         config.Colors
 }
+
+// editing reports whether the form is changing a saved profile.
+func (m WpaEapForm) editing() bool { return m.Target.Path != "" }
 
 type EAPMethod struct {
 	Type string
@@ -102,6 +110,63 @@ func ModelWpaEapForm(colors config.Colors) WpaEapForm {
 
 func (m WpaEapForm) Init() tea.Cmd {
 	return textinput.Blink
+}
+
+// LoadProfile opens the form on a saved profile rather than on empty fields.
+//
+// The password arrives empty when NetworkManager would not hand the secret
+// over, and an empty field already means "leave the stored one alone", so
+// there is nothing to say about the difference.
+func (m *WpaEapForm) LoadProfile(target common.KnownNetwork, profile common.EapProfileMsg) {
+	m.Target = target
+	m.SSIDSelected = profile.SSID
+	// An edit activates the profile, which names its own access point.
+	m.APSelected = ""
+
+	m.Identity.SetValue(profile.Identity)
+	m.Password.SetValue(profile.Password)
+	m.CaCert.SetValue(profile.CaCert)
+
+	selectOption(&m.EapMethod, profile.EapMethod)
+	selectOption(&m.Phase2Auth, profile.Phase2Auth)
+
+	// Starting on the identity rather than on the method: the fields most
+	// likely to be the reason for opening this are the credentials, and the
+	// two selectors are already on what the profile holds.
+	m.focused = 2
+	m.EapMethod.SelectedFunc = makeUnselectedFunc(m.Colors)
+	m.Phase2Auth.SelectedFunc = makeUnselectedFunc(m.Colors)
+	m.Identity.Focus()
+}
+
+// selectOption moves a selector onto the named option.
+//
+// By pressing down, because that is the only way in: the selector's index is
+// unexported and it has no setter, so a profile's current method could
+// otherwise not be shown at all -- and a form that opens on PEAP for a TTLS
+// profile would quietly change it on save.
+func selectOption(sel *selector.Model, option string) {
+	if option == "" {
+		return
+	}
+	// The selector's first Update is its initialiser, and it consumes that
+	// message rather than acting on it, so the first keypress of a run would
+	// otherwise be the one that got lost -- leaving every profile one option
+	// short of its own.
+	initialised, _ := sel.Update(nil)
+	*sel = *initialised
+
+	for i, data := range sel.Data {
+		method, ok := data.(EAPMethod)
+		if !ok || !strings.EqualFold(method.Type, option) {
+			continue
+		}
+		for range i {
+			updated, _ := sel.Update(tea.KeyMsg{Type: tea.KeyDown})
+			*sel = *updated
+		}
+		return
+	}
 }
 
 func (m WpaEapForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -231,6 +296,12 @@ func (m WpaEapForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Send the message with the data back to the parent
+			if m.editing() {
+				target := m.Target
+				return m, func() tea.Msg {
+					return common.SubmitEapEditMsg{Path: target.Path, Config: config}
+				}
+			}
 			return m, func() tea.Msg {
 				return common.SubmitEapFormMsg{Config: config}
 			}
@@ -277,10 +348,16 @@ func (m WpaEapForm) View() string {
 	CaCertLabel := inactiveLabelStyle.Render("\nCA Certificate:")
 	CaCertBox := inactiveBorderStyle.Render(m.CaCert.View())
 
+	// What the button does, which is not the same thing in the two modes: an
+	// edit writes the profile and leaves connecting to the key that does that.
+	submit := "Connect"
+	if m.editing() {
+		submit = "Save"
+	}
 	submitLabel := inactiveBorderStyle.
 		Width(36).
 		Align(lipgloss.Center).
-		Render("Connect")
+		Render(submit)
 
 	switch m.focused {
 	case 0:
@@ -302,7 +379,7 @@ func (m WpaEapForm) View() string {
 			Bold(true).
 			Align(lipgloss.Center).
 			BorderForeground(lipgloss.Color(m.Colors.ActiveText)).
-			Render("Connect")
+			Render(submit)
 	}
 	// --- END NEW LOGIC ---
 	eapStr := strings.TrimSuffix(strings.Replace(m.EapMethod.View(), "\n", "", 2), "\n")
@@ -315,7 +392,22 @@ func (m WpaEapForm) View() string {
 	}
 
 	// We perform the string alterations below the remove the spacing reserved for the header and footer of the selector
+	// The network, which the form never said. It is answerable for a form that
+	// opens one keypress after a row was chosen; it is not for one that opens
+	// after a read off the bus, and five fields of credentials are worth being
+	// sure which profile they belong to.
+	title := ""
+	if m.SSIDSelected != "" {
+		title = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color(m.Colors.ActiveText)).
+			Width(36).
+			Align(lipgloss.Center).
+			Render(m.SSIDSelected)
+	}
+
 	content := lipgloss.JoinVertical(lipgloss.Left,
+		title,
 		EapMethodLabel,
 		eapStr,
 

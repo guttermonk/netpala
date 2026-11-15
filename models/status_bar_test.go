@@ -84,7 +84,7 @@ func TestOnlyApplicableKeysAreOffered(t *testing.T) {
 	// and act on a row. Everything else lives in the help popup, and listing
 	// it here as well is what pushed pane navigation off the end at 80
 	// columns.
-	advanced := []string{"Remove", "Auto", "DNS", "MAC", "Hidden", "Scan", "Import"}
+	advanced := []string{"Remove", "Edit", "Auto", "DNS", "MAC", "Hidden", "Scan", "Import"}
 
 	for _, pane := range []int{
 		common.PaneKnown, common.PaneScanned,
