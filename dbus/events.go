@@ -122,31 +122,27 @@ func RequestScan(conn *dbus.Conn) tea.Cmd {
 	}
 }
 
+// GetScanResults reads the access points NetworkManager already knows about.
+//
+// It only reads. It used to ask every wireless device for a fresh scan first,
+// which made it feed itself: the debounce that calls this runs off
+// AccessPointAdded/Removed, so each read asked for a scan, the scan moved the
+// access point list, and the churn came back round as more signals. Asking is
+// RequestScan's job, and the two callers that want a scan rather than the
+// current picture call it themselves.
 func GetScanResults(conn *dbus.Conn) tea.Cmd {
 	return func() tea.Msg {
-		nm := conn.Object(network.NMDest, dbus.ObjectPath(network.NMPath))
-		var devPaths []dbus.ObjectPath
-		if err := nm.Call(network.NMDest+".GetDevices", 0).Store(&devPaths); err != nil {
-			return common.ErrMsg{Err: err}
-		}
-
-		for _, devPath := range devPaths {
-			devObj := conn.Object(network.NMDest, devPath)
-			devProps := network.GetProps(devObj, network.DevIF)
-			// The scan that follows a radio toggle is exactly when a device
-			// goes missing mid-loop, and this is the read that used to panic
-			// on it. See network.IsWifiType.
-			if network.IsWifiType(devProps["DeviceType"]) {
-				_ = devObj.Call(network.WifiIF+".RequestScan", 0, map[string]dbus.Variant{})
-			}
-		}
-
 		return common.ScannedNetworksUpdateMsg(network.GetScannedNetworks(conn))
 	}
 }
 
 func RefreshAllData(conn *dbus.Conn) tea.Cmd {
 	return tea.Batch(
+		// The periodic refresh is the one place a scan is still worth asking
+		// for without being told to: a connected device scans rarely on its
+		// own, so New Networks would otherwise sit still. Timer-driven, so it
+		// cannot feed itself the way the signal path did.
+		RequestScan(conn),
 		GetScanResults(conn),
 		func() tea.Msg { return common.DeviceUpdateMsg(network.GetDevicesData(conn)) },
 		func() tea.Msg { return common.KnownNetworksUpdateMsg(network.GetKnownNetworks(conn)) },
