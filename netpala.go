@@ -542,6 +542,33 @@ func (m *NetpalaData) openDnsPickerForStop(svc common.SecurityService) {
 	m.Overlay = updateOverlayModel(*m, &m.DnsForm)
 }
 
+// scannedUnderCursor is the SSID the cursor is on in New Networks, or "" if it
+// is somewhere else. Read before a scan replaces the list.
+func (m *NetpalaData) scannedUnderCursor() string {
+	if m.selectedBox != common.PaneScanned {
+		return ""
+	}
+	if m.SelectedEntry < 0 || m.SelectedEntry >= len(m.ScannedNetworks) {
+		return ""
+	}
+	return m.ScannedNetworks[m.SelectedEntry].SSID
+}
+
+// keepCursorOn points the cursor back at an SSID after the list has been
+// replaced. A network that has gone leaves the cursor where it was, which
+// clampSelection then brings inside the new length.
+func (m *NetpalaData) keepCursorOn(ssid string) {
+	if ssid == "" || m.selectedBox != common.PaneScanned {
+		return
+	}
+	for i, n := range m.ScannedNetworks {
+		if n.SSID == ssid {
+			m.SelectedEntry = i
+			return
+		}
+	}
+}
+
 // clampSelection keeps the cursor inside the pane after a refresh shrinks it,
 // and moves off a pane that has just been hidden.
 func (m *NetpalaData) clampSelection() {
@@ -1455,9 +1482,15 @@ func (m NetpalaData) applyDataMsg(msg tea.Msg) (NetpalaData, tea.Cmd, bool) {
 				return common.PerformScanRefreshMsg{}
 			}), true
 		}
-		// This is the actual data from a completed scan.
+		// This is the actual data from a completed scan. The cursor is held on
+		// the network it was on rather than on the row number: a scan that
+		// drops an access point above it shifts everything up, and the row the
+		// cursor keeps is then a different network to the one that was there
+		// when Enter was reached for.
+		under := m.scannedUnderCursor()
 		m.ScannedNetworks = msg
 		m.FilterKnownFromScanned()
+		m.keepCursorOn(under)
 		return m, nil, true
 
 	case common.PerformScanRefreshMsg:

@@ -530,6 +530,11 @@ func SanitizeSSID(s, replacement string) string {
 	return re.ReplaceAllString(s, replacement)
 }
 
+// SortDevicesBySignal puts the scan results in display order, and is the only
+// rule for it: strongest first, and alphabetical between networks reporting the
+// same strength. The tiebreak is what makes it a total order, so the same scan
+// always reads the same way round rather than in whatever order the access
+// points were enumerated.
 func SortDevicesBySignal(devices []ScannedNetwork) {
 	slices.SortFunc(devices, func(a, b ScannedNetwork) int {
 		// Primary sort: Signal descending (higher is better)

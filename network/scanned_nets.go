@@ -2,7 +2,6 @@ package network
 
 import (
 	"netpala/common"
-	"sort"
 	"strings"
 
 	"github.com/godbus/dbus/v5"
@@ -117,6 +116,15 @@ func getSecurityType(wpaFlags, rsnFlags uint32) string {
 	return strings.Join(security, " / ")
 }
 
+// removeDuplicates keeps the strongest access point for each SSID, which is
+// also the one worth activating on, and returns them in the display order.
+//
+// Sorting here rather than leaving it to the caller is what makes the order a
+// function of the scan. It was a map iteration followed by a sort on signal
+// alone, so networks reporting the same strength -- which the weak half of a
+// scan mostly does -- came back in a different order every time, and the list
+// reshuffled under the cursor several times a minute with nothing having
+// changed. The signal is the only thing that should move a row.
 func removeDuplicates(networks []common.ScannedNetwork) []common.ScannedNetwork {
 	networkMap := make(map[string]common.ScannedNetwork)
 	for _, network := range networks {
@@ -130,6 +138,6 @@ func removeDuplicates(networks []common.ScannedNetwork) []common.ScannedNetwork 
 	for _, network := range networkMap {
 		result = append(result, network)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Signal > result[j].Signal })
+	common.SortDevicesBySignal(result)
 	return result
 }
