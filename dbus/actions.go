@@ -44,75 +44,38 @@ func AddAndConnectToNetworkCmd(conn *dbus.Conn, net common.ScannedNetwork, passw
 			return common.ErrMsg{Err: fmt.Errorf("failed to generate uuid: %w", err)}
 		}
 
-		// 2. Build settings map
-		settings := map[string]map[string]dbus.Variant{
-			"connection": {
-				"id":          dbus.MakeVariant(net.SSID),
-				"uuid":        dbus.MakeVariant(newUUID.String()),
-				"type":        dbus.MakeVariant("802-11-wireless"),
-				"autoconnect": dbus.MakeVariant(true),
-			},
-			"802-11-wireless": {
-				"ssid":     dbus.MakeVariant([]byte(net.SSID)),
-				"mode":     dbus.MakeVariant("infrastructure"),
-				"security": dbus.MakeVariant("802-11-wireless-security"),
-			},
-			"ipv4": {"method": dbus.MakeVariant("auto")},
-			"ipv6": {"method": dbus.MakeVariant("auto")},
-		}
-		securitySettings := make(map[string]dbus.Variant)
-		switch net.Security {
-		case "wpa3-sae":
-			securitySettings["key-mgmt"] = dbus.MakeVariant("sae")
-			securitySettings["psk"] = dbus.MakeVariant(password)
-		case "wpa2-psk":
-			securitySettings["key-mgmt"] = dbus.MakeVariant("wpa-psk")
-			securitySettings["psk"] = dbus.MakeVariant(password)
-		default:
-			if net.Security != "open" {
-				securitySettings["key-mgmt"] = dbus.MakeVariant("wpa-psk")
-				securitySettings["psk"] = dbus.MakeVariant(password)
-			}
-		}
-		if len(securitySettings) > 0 {
-			settings["802-11-wireless-security"] = securitySettings
-		}
+		// 2. Build the profile
+		settings := wirelessProfileSettings(net, password, newUUID.String())
 
-		// 3. Add the connection via D-Bus
-		settingsObj := conn.Object(network.NMDest, "/org/freedesktop/NetworkManager/Settings")
-		call := settingsObj.Call("org.freedesktop.NetworkManager.Settings.AddConnection", 0, settings)
+		// 3. Add the profile and bring it up in one call, on the access point
+		// the row was read from. Same reasoning as the EAP path: the second
+		// call of an add-then-activate races the autoconnect the new profile
+		// is created with, and the specific object is the only way to say
+		// which of the access points sharing this SSID to use -- the one whose
+		// signal was on screen, rather than whichever NetworkManager prefers.
+		nm := conn.Object(network.NMDest, dbus.ObjectPath(network.NMPath))
+		call := nm.Call("org.freedesktop.NetworkManager.AddAndActivateConnection", 0,
+			settings, devicePath, specificObject(string(net.Path)))
 		if call.Err != nil {
-			return common.ErrMsg{Err: fmt.Errorf("failed to add connection: %w", call.Err)}
+			return common.ErrMsg{Err: fmt.Errorf("failed to add and activate connection: %w", call.Err)}
 		}
 
-		// 4. Get the path (optional)
-		var newConnectionPath dbus.ObjectPath
-		err = call.Store(&newConnectionPath) // Store error
-
-		// 5. Create the delayed refresh command
+		// 4. Create the delayed refresh command
 		refreshCmd := tea.Tick(150*time.Millisecond, func(t time.Time) tea.Msg {
 			return common.RefreshKnownNetworksMsg{}
 		})
 
-		// 6. Create the optimistic update message
+		// 5. Create the optimistic update message
 		optimisticMsg := common.OptimisticAddMsg{
 			SSID:     net.SSID,
 			Security: net.Security, // Use the security string from scanned network
 		}
 
-		// 7. Batch commands based on success
-		var batchCmds []tea.Cmd
-		batchCmds = append(batchCmds, func() tea.Msg { return optimisticMsg }) // Send optimistic update first
-		batchCmds = append(batchCmds, refreshCmd)                              // Schedule real refresh
-
-		if err == nil {
-			// If we got the path, attempt connection
-			batchCmds = append(batchCmds, ConnectToNetworkCmd(conn, newConnectionPath, devicePath))
-		} else {
-			// If we didn't get the path, report the error but still refresh
-			batchCmds = append(batchCmds, func() tea.Msg {
-				return common.ErrMsg{Err: fmt.Errorf("added connection but failed to read path: %w", err)}
-			})
+		// 6. The activation is under way already, so this is the row to show
+		// and the refresh that replaces it with the real one.
+		batchCmds := []tea.Cmd{
+			func() tea.Msg { return optimisticMsg },
+			refreshCmd,
 		}
 		// BatchMsg, not Batch: this is returned as a Msg, and the runtime only
 		// dispatches BatchMsg. Returning a Cmd here silently drops it.
@@ -184,6 +147,47 @@ func AddAndConnectEAPCmd(conn *dbus.Conn, config map[string]string, devicePath d
 		// dispatches BatchMsg. Returning a Cmd here silently drops it.
 		return tea.BatchMsg(batchCmds)
 	}
+}
+
+// wirelessProfileSettings builds the connection stored for an open, PSK or SAE
+// network. Separated from the call for the same reason as the EAP one: the
+// shape of it is what can be checked without a bus.
+func wirelessProfileSettings(net common.ScannedNetwork, password, uuid string) map[string]map[string]dbus.Variant {
+	settings := map[string]map[string]dbus.Variant{
+		"connection": {
+			"id":          dbus.MakeVariant(net.SSID),
+			"uuid":        dbus.MakeVariant(uuid),
+			"type":        dbus.MakeVariant("802-11-wireless"),
+			"autoconnect": dbus.MakeVariant(true),
+		},
+		"802-11-wireless": {
+			"ssid":     dbus.MakeVariant([]byte(net.SSID)),
+			"mode":     dbus.MakeVariant("infrastructure"),
+			"security": dbus.MakeVariant("802-11-wireless-security"),
+		},
+		"ipv4": {"method": dbus.MakeVariant("auto")},
+		"ipv6": {"method": dbus.MakeVariant("auto")},
+	}
+
+	securitySettings := make(map[string]dbus.Variant)
+	switch net.Security {
+	case "wpa3-sae":
+		securitySettings["key-mgmt"] = dbus.MakeVariant("sae")
+		securitySettings["psk"] = dbus.MakeVariant(password)
+	case "wpa2-psk":
+		securitySettings["key-mgmt"] = dbus.MakeVariant("wpa-psk")
+		securitySettings["psk"] = dbus.MakeVariant(password)
+	default:
+		if net.Security != "open" {
+			securitySettings["key-mgmt"] = dbus.MakeVariant("wpa-psk")
+			securitySettings["psk"] = dbus.MakeVariant(password)
+		}
+	}
+	if len(securitySettings) > 0 {
+		settings["802-11-wireless-security"] = securitySettings
+	}
+
+	return settings
 }
 
 // specificObject is the access point to activate on, as
