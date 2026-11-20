@@ -1,17 +1,17 @@
 module netpala
 
-go 1.25.4
+go 1.26.0
 
 require (
-	github.com/BurntSushi/toml v1.4.0
+	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/google/uuid v1.6.0
 	github.com/mritd/bubbles v0.0.0-20210825105013-cb7a572fb831
 	github.com/rmhubbert/bubbletea-overlay v0.6.10
-	go.dalton.dog/bubbleup v1.1.0
-	golang.org/x/term v0.37.0
+	go.dalton.dog/bubbleup v1.4.0
+	golang.org/x/term v0.48.0
 )
 
 require (
@@ -23,9 +23,9 @@ require (
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
-	github.com/charmbracelet/colorprofile v0.3.3 // indirect
+	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/x/ansi v0.11.9 // indirect
-	github.com/charmbracelet/x/cellbuf v0.0.14 // indirect
+	github.com/charmbracelet/x/cellbuf v0.0.16-0.20260602025815-df92a5806f7e // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
@@ -39,6 +39,6 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
 )
