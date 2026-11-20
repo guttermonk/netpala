@@ -6,15 +6,19 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    # The bubbletea/lipgloss/x-ansi family moves constantly; one PR for the
-    # patch stream, separate PRs for minor and major.
+    # Every go.sum change needs flake.nix's vendorHash moved by hand, and
+    # dependabot has no idea flake.nix exists -- so each separate PR is
+    # another commit I have to write before the nix job will go green. One
+    # PR for everything short of a major keeps that to once a week. Majors
+    # still arrive alone, where the hash is the least of what wants reading.
     groups:
-      patch:
+      non-major:
         update-types:
           - "patch"
+          - "minor"
 
-  # .github/workflows/go.yml is still on actions/checkout@v4 and
-  # actions/setup-go@v4; expect PRs for both on the first run.
+  # Nothing here touches go.sum, so there is no vendorHash to chase and no
+  # reason to group these.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
