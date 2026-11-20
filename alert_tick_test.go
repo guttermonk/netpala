@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"go.dalton.dog/bubbleup"
@@ -9,9 +10,18 @@ import (
 
 // alertTick returns a real bubbleup tick. Its type is unexported, so the only
 // way to get one is to run the command the alert model arms itself with.
-func alertTick(t *testing.T, m NetpalaData) tea.Msg {
+//
+// bubbleup arms it on the first alert rather than at Init, which is where it
+// used to be, so getting one means raising an alert. That is done on a
+// throwaway model rather than the one under test: the two expiry tests below
+// raise their own alert and then measure what becomes of it, and a second
+// alert raised in here would replace the one they are watching. A tick is a
+// time.Time and says nothing about which model produced it, so one model's
+// tick is another's.
+func alertTick(t *testing.T) tea.Msg {
 	t.Helper()
-	cmd := m.Alert.Init()
+	src := bubbleup.NewAlertModel(40, true, time.Second)
+	_, cmd := src.Update(src.NewAlertCmd(bubbleup.WarnKey, "tick source")())
 	if cmd == nil {
 		t.Fatal("alert model armed no tick")
 	}
@@ -41,7 +51,17 @@ func TestAlertTickSurvivesAnOpenPopup(t *testing.T) {
 			m := linkModel(false, nil)
 			m.PopupState = popup.state
 
-			tick := alertTick(t, m)
+			// bubbleup ticks only while an alert is live, so there has to be
+			// one on screen for a swallowed tick to be the difference between
+			// a fade and no fade. A minute outlasts the 100ms tick by enough
+			// that the alert is still alive when it arrives, which is what
+			// separates this from the expiry tests below.
+			m.Alert = *bubbleup.NewAlertModel(40, true, time.Minute)
+			raise := m.Alert.NewAlertCmd(bubbleup.WarnKey, "wlp3s0 would not take a Random MAC address")
+			next, _ := m.Update(raise())
+			m = next.(NetpalaData)
+
+			tick := alertTick(t)
 			_, cmd := m.Update(tick)
 			if cmd == nil {
 				t.Fatal("the tick was consumed without re-arming; the fade stops here " +
@@ -71,7 +91,7 @@ func TestAlertExpires(t *testing.T) {
 		t.Fatal("precondition: the alert should be on screen before any tick")
 	}
 
-	next, _ = m.Update(alertTick(t, m))
+	next, _ = m.Update(alertTick(t))
 	m = next.(NetpalaData)
 
 	if got := m.Alert.Render("content"); got != "content" {
@@ -90,7 +110,7 @@ func TestAlertExpiresWithPopupOpen(t *testing.T) {
 	next, _ := m.Update(raise())
 	m = next.(NetpalaData)
 
-	next, _ = m.Update(alertTick(t, m))
+	next, _ = m.Update(alertTick(t))
 	if got := next.(NetpalaData).Alert.Render("content"); got != "content" {
 		t.Errorf("alert survived expiry while a popup was open:\n%s", got)
 	}
