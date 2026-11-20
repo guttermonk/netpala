@@ -23,3 +23,19 @@ jobs:
 
     - name: Build
       run: go build -v ./...
+
+  # The flake pins a vendorHash over go.sum, so a dependency change that builds
+  # here can still fail to build at all under Nix. This job is what notices.
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31.11.5
+
+    - name: Build
+      run: nix build --print-build-logs
+
+    - name: Check
+      run: nix flake check --print-build-logs
