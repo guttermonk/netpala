@@ -30,7 +30,7 @@
                 baseName == "flake.lock");
           };
 
-          vendorHash = "sha256-fo5705Dlflp2ZDPhejZxXpfaCnjBBXCKkAIzHQ9g1Ng=";
+          vendorHash = "sha256-RAfpsuhc+9NQj/8jx+k7U6MfhtuDtipO8grk5n/sKTU=";
 
           meta = with pkgs.lib; {
             description = "A lightweight terminal-friendly NetworkManager wrapper written in Go";
