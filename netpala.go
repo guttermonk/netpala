@@ -687,7 +687,9 @@ func NetpalaModel() NetpalaData {
 	cfg, _ := config.Load()
 	keyMap := config.NewAppKeyMap(cfg)
 
-	alert := bubbleup.NewAlertModel(40, true, 10)
+	// Ten seconds. The third argument is a time.Duration, so a bare 10 is ten
+	// nanoseconds and every alert dies on the first 100ms tick.
+	alert := bubbleup.NewAlertModel(40, true, 10*time.Second)
 
 	// Read once: it is a file on disk that only changes with a NetworkManager
 	// reload, and the picker needs it every time it opens.

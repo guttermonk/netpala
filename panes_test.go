@@ -5,6 +5,7 @@ import (
 	"netpala/config"
 	"reflect"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"go.dalton.dog/bubbleup"
@@ -189,7 +190,7 @@ func TestSelectAfterTheScanListEmptiesDoesNotPanic(t *testing.T) {
 	m := withData(0, 0, 0, 6, 1)
 	cfg := config.DefaultConfig()
 	m.Config, m.KeyMap, m.PopupState = &cfg, config.NewAppKeyMap(&cfg), -1
-	m.Alert = *bubbleup.NewAlertModel(40, true, 10)
+	m.Alert = *bubbleup.NewAlertModel(40, true, 10*time.Second)
 	m.selectedBox = common.PaneScanned
 	m.SelectedEntry = 5
 

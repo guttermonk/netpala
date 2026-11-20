@@ -6,6 +6,7 @@ import (
 	"netpala/models"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	godbus "github.com/godbus/dbus/v5"
@@ -14,7 +15,7 @@ import (
 
 func linkModel(resolverActive bool, networks []common.KnownNetwork) NetpalaData {
 	cfg := config.DefaultConfig()
-	alert := bubbleup.NewAlertModel(40, true, 10)
+	alert := bubbleup.NewAlertModel(40, true, 10*time.Second)
 	return NetpalaData{
 		Config: &cfg, KeyMap: config.NewAppKeyMap(&cfg), Colors: cfg.Colors,
 		Alert:      *alert,
